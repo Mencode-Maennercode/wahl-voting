@@ -1,0 +1,11 @@
+{
+  "/_not-found": "app/_not-found.js",
+  "/abstimmen/page": "app/abstimmen/page.js",
+  "/admin/einstellungen/page": "app/admin/einstellungen/page.js",
+  "/admin/page": "app/admin/page.js",
+  "/admin/vorlagen/page": "app/admin/vorlagen/page.js",
+  "/admin/wahl/[id]/codes/page": "app/admin/wahl/[id]/codes/page.js",
+  "/admin/wahl/[id]/ergebnis/page": "app/admin/wahl/[id]/ergebnis/page.js",
+  "/admin/wahl/[id]/page": "app/admin/wahl/[id]/page.js",
+  "/page": "app/page.js"
+}
