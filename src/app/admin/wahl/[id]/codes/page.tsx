@@ -58,9 +58,6 @@ export default function CodesPage() {
           associationId: data.associationId,
           title: data.title,
           description: data.description,
-          question: data.question,
-          options: data.options,
-          allowInvalidVotes: data.allowInvalidVotes,
           electionDate: data.electionDate?.toDate() || new Date(),
           maxVoters: data.maxVoters,
           invitationText: data.invitationText,
@@ -84,8 +81,7 @@ export default function CodesPage() {
             id: doc.id,
             electionId: codeData.electionId,
             code: codeData.code,
-            hasVoted: codeData.hasVoted,
-            votedAt: codeData.votedAt?.toDate(),
+            votedQuestions: codeData.votedQuestions || [],
             createdAt: codeData.createdAt?.toDate() || new Date()
           })
         })
@@ -159,7 +155,7 @@ export default function CodesPage() {
         const codeDoc = await addDoc(codesRef, {
           electionId: electionId,
           code: code,
-          hasVoted: false,
+          votedQuestions: [],
           createdAt: Timestamp.now()
         })
 
@@ -167,7 +163,7 @@ export default function CodesPage() {
           id: codeDoc.id,
           electionId: electionId,
           code: code,
-          hasVoted: false,
+          votedQuestions: [],
           createdAt: new Date()
         })
       }

@@ -44,9 +44,6 @@ export default function AdminDashboard() {
   const [newElection, setNewElection] = useState({
     title: '',
     description: '',
-    question: '',
-    options: [{ id: '1', text: '', order: 0 }, { id: '2', text: '', order: 1 }],
-    allowInvalidVotes: true,
     electionDate: '',
     maxVoters: 50,
     invitationText: 'Sie sind herzlich eingeladen, an der Abstimmung teilzunehmen. Bitte scannen Sie den QR-Code oder geben Sie den Code auf der Webseite ein.',
@@ -200,9 +197,6 @@ export default function AdminDashboard() {
           associationId: data.associationId,
           title: data.title,
           description: data.description,
-          question: data.question,
-          options: data.options,
-          allowInvalidVotes: data.allowInvalidVotes,
           electionDate: data.electionDate?.toDate() || new Date(),
           maxVoters: data.maxVoters,
           invitationText: data.invitationText,
@@ -231,10 +225,10 @@ export default function AdminDashboard() {
   const handleCreateElection = async () => {
     if (!association) return
     
-    if (!newElection.title || !newElection.question || newElection.options.some(o => !o.text)) {
+    if (!newElection.title) {
       toast({
         title: "Felder ausfüllen",
-        description: "Bitte füllen Sie alle Pflichtfelder aus.",
+        description: "Bitte geben Sie mindestens einen Titel ein.",
         variant: "destructive"
       })
       return
@@ -245,9 +239,6 @@ export default function AdminDashboard() {
         associationId: association.id,
         title: newElection.title,
         description: newElection.description,
-        question: newElection.question,
-        options: newElection.options.map((o, i) => ({ ...o, order: i })),
-        allowInvalidVotes: newElection.allowInvalidVotes,
         electionDate: Timestamp.fromDate(new Date(newElection.electionDate)),
         maxVoters: newElection.maxVoters,
         invitationText: newElection.invitationText,
@@ -258,26 +249,24 @@ export default function AdminDashboard() {
         updatedAt: Timestamp.now()
       }
 
-      await addDoc(collection(db, 'elections'), electionData)
+      const docRef = await addDoc(collection(db, 'elections'), electionData)
       
       toast({
         title: "Wahl erstellt",
-        description: "Die Wahl wurde erfolgreich erstellt."
+        description: "Die Wahl wurde erfolgreich erstellt. Fügen Sie jetzt Wahlfragen hinzu."
       })
       
       setShowNewElection(false)
       setNewElection({
         title: '',
         description: '',
-        question: '',
-        options: [{ id: '1', text: '', order: 0 }, { id: '2', text: '', order: 1 }],
-        allowInvalidVotes: true,
         electionDate: '',
         maxVoters: 50,
         invitationText: 'Sie sind herzlich eingeladen, an der Abstimmung teilzunehmen. Bitte scannen Sie den QR-Code oder geben Sie den Code auf der Webseite ein.',
         showLinkWithCode: false
       })
-      loadElections()
+      
+      router.push(`/admin/wahl/${docRef.id}/fragen`)
     } catch (error) {
       console.error('Error creating election:', error)
       toast({
@@ -288,25 +277,6 @@ export default function AdminDashboard() {
     }
   }
 
-  const addOption = () => {
-    const newId = (newElection.options.length + 1).toString()
-    setNewElection({
-      ...newElection,
-      options: [...newElection.options, { id: newId, text: '', order: newElection.options.length }]
-    })
-  }
-
-  const removeOption = (index: number) => {
-    if (newElection.options.length <= 2) return
-    const updated = newElection.options.filter((_, i) => i !== index)
-    setNewElection({ ...newElection, options: updated })
-  }
-
-  const updateOption = (index: number, text: string) => {
-    const updated = [...newElection.options]
-    updated[index].text = text
-    setNewElection({ ...newElection, options: updated })
-  }
 
   const handleLogout = () => {
     logout()
@@ -717,7 +687,7 @@ export default function AdminDashboard() {
               <DialogHeader>
                 <DialogTitle>Neue Wahl erstellen</DialogTitle>
                 <DialogDescription>
-                  Definieren Sie die Wahlfrage und die möglichen Antworten.
+                  Erstellen Sie eine neue Veranstaltung. Wahlfragen können Sie anschließend hinzufügen.
                 </DialogDescription>
               </DialogHeader>
               
@@ -737,47 +707,11 @@ export default function AdminDashboard() {
                     <Label htmlFor="description">Beschreibung</Label>
                     <Textarea
                       id="description"
-                      placeholder="Optionale Beschreibung der Wahl"
+                      placeholder="Optionale Beschreibung der Veranstaltung"
                       value={newElection.description}
                       onChange={(e) => setNewElection({ ...newElection, description: e.target.value })}
+                      rows={2}
                     />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="question">Wahlfrage *</Label>
-                    <Input
-                      id="question"
-                      placeholder="z.B. Wen wählen Sie zum neuen Vorsitzenden?"
-                      value={newElection.question}
-                      onChange={(e) => setNewElection({ ...newElection, question: e.target.value })}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label>Antwortmöglichkeiten *</Label>
-                    {newElection.options.map((option, index) => (
-                      <div key={option.id} className="flex gap-2">
-                        <Input
-                          placeholder={`Option ${index + 1}`}
-                          value={option.text}
-                          onChange={(e) => updateOption(index, e.target.value)}
-                        />
-                        {newElection.options.length > 2 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => removeOption(index)}
-                          >
-                            <Trash2 className="h-4 w-4 text-slate-500" />
-                          </Button>
-                        )}
-                      </div>
-                    ))}
-                    <Button type="button" variant="outline" size="sm" onClick={addOption}>
-                      <Plus className="h-4 w-4 mr-1" />
-                      Option hinzufügen
-                    </Button>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
@@ -810,18 +744,6 @@ export default function AdminDashboard() {
                       value={newElection.invitationText}
                       onChange={(e) => setNewElection({ ...newElection, invitationText: e.target.value })}
                       rows={3}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
-                    <div>
-                      <Label htmlFor="allowInvalid">Ungültige Stimmen erlauben</Label>
-                      <p className="text-sm text-slate-500">Teilnehmer können ohne Auswahl abstimmen</p>
-                    </div>
-                    <Switch
-                      id="allowInvalid"
-                      checked={newElection.allowInvalidVotes}
-                      onCheckedChange={(checked) => setNewElection({ ...newElection, allowInvalidVotes: checked })}
                     />
                   </div>
 
@@ -937,10 +859,6 @@ export default function AdminDashboard() {
                     <div className="flex items-center gap-1">
                       <Users className="h-4 w-4" />
                       {election.maxVoters} Teilnehmer
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <CheckCircle2 className="h-4 w-4" />
-                      {election.options.length} Optionen
                     </div>
                   </div>
                   

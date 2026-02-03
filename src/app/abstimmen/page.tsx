@@ -12,7 +12,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { useToast } from '@/components/ui/use-toast'
 import { Vote, Shield, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react'
-import type { Election, VoterCode } from '@/types'
+import type { Election, VoterCode, ElectionQuestion } from '@/types'
 
 function VotingContent() {
   const searchParams = useSearchParams()
@@ -23,9 +23,11 @@ function VotingContent() {
   const [loading, setLoading] = useState(false)
   const [voterCode, setVoterCode] = useState<VoterCode | null>(null)
   const [election, setElection] = useState<Election | null>(null)
-  const [selectedOption, setSelectedOption] = useState<string | null>(null)
+  const [questions, setQuestions] = useState<ElectionQuestion[]>([])
+  const [selectedOptions, setSelectedOptions] = useState<Record<string, string | null>>({})
   const [showInvalidWarning, setShowInvalidWarning] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
+  const [votedQuestions, setVotedQuestions] = useState<string[]>([])
 
   useEffect(() => {
     // Always show code input dialog, even if code is in URL
@@ -74,10 +76,11 @@ function VotingContent() {
         id: codeDoc.id,
         electionId: codeData.electionId,
         code: codeData.code,
-        hasVoted: codeData.hasVoted,
-        votedAt: codeData.votedAt?.toDate(),
+        votedQuestions: codeData.votedQuestions || [],
         createdAt: codeData.createdAt?.toDate() || new Date()
       }
+      
+      setVotedQuestions(codeData.votedQuestions || [])
 
       const electionRef = doc(db, 'elections', codeData.electionId)
       const electionSnap = await getDoc(electionRef)
@@ -109,9 +112,6 @@ function VotingContent() {
         associationId: electionData.associationId,
         title: electionData.title,
         description: electionData.description,
-        question: electionData.question,
-        options: electionData.options,
-        allowInvalidVotes: electionData.allowInvalidVotes,
         electionDate: electionData.electionDate?.toDate() || new Date(),
         maxVoters: electionData.maxVoters,
         invitationText: electionData.invitationText,
@@ -122,8 +122,31 @@ function VotingContent() {
         updatedAt: electionData.updatedAt?.toDate() || new Date()
       }
 
+      const questionsRef = collection(db, 'electionQuestions')
+      const questionsQuery = query(questionsRef, where('electionId', '==', codeData.electionId))
+      const questionsSnap = await getDocs(questionsQuery)
+      
+      const loadedQuestions: ElectionQuestion[] = []
+      questionsSnap.forEach((qDoc) => {
+        const qData = qDoc.data()
+        loadedQuestions.push({
+          id: qDoc.id,
+          electionId: qData.electionId,
+          question: qData.question,
+          options: qData.options,
+          allowInvalidVotes: qData.allowInvalidVotes,
+          isActive: qData.isActive,
+          order: qData.order,
+          createdAt: qData.createdAt?.toDate() || new Date(),
+          updatedAt: qData.updatedAt?.toDate() || new Date()
+        })
+      })
+      
+      loadedQuestions.sort((a, b) => a.order - b.order)
+
       setVoterCode(voterCodeData)
       setElection(electionObj)
+      setQuestions(loadedQuestions)
       setStep('voting')
     } catch (error) {
       console.error('Error verifying code:', error)
@@ -134,10 +157,12 @@ function VotingContent() {
     }
   }
 
-  const handleSubmitVote = async () => {
+  const handleSubmitVote = async (questionId: string, allowInvalidVotes: boolean) => {
     if (!voterCode || !election) return
 
-    if (!selectedOption && !election.allowInvalidVotes) {
+    const selectedOption = selectedOptions[questionId]
+
+    if (!selectedOption && !allowInvalidVotes) {
       toast({
         title: "Auswahl erforderlich",
         description: "Bitte wählen Sie eine Option aus.",
@@ -146,32 +171,48 @@ function VotingContent() {
       return
     }
 
-    if (!selectedOption && election.allowInvalidVotes) {
+    if (!selectedOption && allowInvalidVotes) {
       setShowInvalidWarning(true)
       return
     }
 
-    await submitVote(false)
+    await submitVote(questionId, false)
   }
 
-  const submitVote = async (isInvalid: boolean) => {
+  const submitVote = async (questionId: string, isInvalid: boolean) => {
     if (!voterCode || !election) return
     setLoading(true)
 
     try {
+      const selectedOption = selectedOptions[questionId]
+      
       await addDoc(collection(db, 'votes'), {
         electionId: election.id,
+        questionId: questionId,
         optionId: isInvalid ? null : selectedOption,
         isInvalid: isInvalid,
         votedAt: Timestamp.now()
       })
 
+      const updatedVotedQuestions = [...votedQuestions, questionId]
       await updateDoc(doc(db, 'voterCodes', voterCode.id), {
-        hasVoted: true,
-        votedAt: Timestamp.now()
+        votedQuestions: updatedVotedQuestions
       })
 
-      setStep('done')
+      setVotedQuestions(updatedVotedQuestions)
+      
+      const allQuestionsVoted = questions.every(q => 
+        updatedVotedQuestions.includes(q.id) || !q.isActive
+      )
+      
+      if (allQuestionsVoted) {
+        setStep('done')
+      } else {
+        toast({
+          title: "Stimme abgegeben",
+          description: "Ihre Stimme wurde erfolgreich gespeichert.",
+        })
+      }
     } catch (error) {
       console.error('Error submitting vote:', error)
       toast({
@@ -247,71 +288,127 @@ function VotingContent() {
         )}
 
         {step === 'voting' && election && (
-          <Card className="w-full max-w-lg animate-fade-in">
-            <CardHeader>
-              <CardTitle className="text-xl">{election.title}</CardTitle>
-              {election.description && (
-                <CardDescription>{election.description}</CardDescription>
-              )}
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                <div className="p-4 bg-slate-50 rounded-lg">
-                  <h3 className="font-medium text-lg mb-4">{election.question}</h3>
-                  
-                  <RadioGroup 
-                    value={selectedOption || ''} 
-                    onValueChange={setSelectedOption}
-                    className="space-y-3"
-                  >
-                    {election.options
-                      .sort((a, b) => a.order - b.order)
-                      .map((option) => (
-                        <div
-                          key={option.id}
-                          className={`flex items-center space-x-3 p-4 rounded-lg border-2 transition-all cursor-pointer ${
-                            selectedOption === option.id
-                              ? 'border-slate-800 bg-white shadow-sm'
-                              : 'border-transparent bg-white hover:border-slate-200'
-                          }`}
-                          onClick={() => setSelectedOption(option.id)}
-                        >
-                          <RadioGroupItem value={option.id} id={option.id} />
-                          <Label 
-                            htmlFor={option.id} 
-                            className="flex-1 cursor-pointer text-base"
-                          >
-                            {option.text}
-                          </Label>
-                        </div>
-                      ))}
-                  </RadioGroup>
-                </div>
-
-                <div className="flex flex-col gap-2">
-                  <Button 
-                    onClick={handleSubmitVote} 
-                    size="lg" 
-                    className="w-full"
-                    disabled={loading}
-                  >
-                    {loading ? 'Wird abgesendet...' : 'Stimme abgeben'}
-                  </Button>
-                  
-                  {election.allowInvalidVotes && !selectedOption && (
-                    <p className="text-xs text-center text-slate-500">
-                      Sie können auch ohne Auswahl fortfahren (ungültige Stimme).
-                    </p>
-                  )}
-                </div>
-
+          <div className="w-full max-w-2xl animate-fade-in space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-xl">{election.title}</CardTitle>
+                {election.description && (
+                  <CardDescription>{election.description}</CardDescription>
+                )}
+              </CardHeader>
+              <CardContent>
                 <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg text-green-800 text-sm">
                   <Shield className="h-4 w-4 flex-shrink-0" />
                   <span>Ihre Stimme wird anonym und verschlüsselt übertragen.</span>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+
+            {questions.length === 0 ? (
+              <Card>
+                <CardContent className="pt-6 text-center">
+                  <p className="text-slate-600">Noch keine Wahlfragen verfügbar. Bitte warten Sie, bis der Administrator Fragen freigibt.</p>
+                </CardContent>
+              </Card>
+            ) : (
+              questions.map((question, index) => (
+                <Card key={question.id} className={`${
+                  votedQuestions.includes(question.id) 
+                    ? 'border-green-200 bg-green-50/30' 
+                    : question.isActive 
+                      ? 'border-slate-200' 
+                      : 'border-slate-200 bg-slate-50/50 opacity-75'
+                }`}>
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <CardTitle className="text-base">Frage {index + 1}</CardTitle>
+                          {votedQuestions.includes(question.id) ? (
+                            <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full font-medium flex items-center gap-1">
+                              <CheckCircle2 className="h-3 w-3" />
+                              Abgestimmt
+                            </span>
+                          ) : question.isActive ? (
+                            <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                              Aktiv
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-600 text-xs rounded-full font-medium flex items-center gap-1">
+                              <XCircle className="h-3 w-3" />
+                              Noch nicht freigegeben
+                            </span>
+                          )}
+                        </div>
+                        <CardDescription className="text-sm">{question.question}</CardDescription>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    {votedQuestions.includes(question.id) ? (
+                      <div className="p-4 bg-green-50 rounded-lg text-center">
+                        <CheckCircle2 className="h-8 w-8 text-green-600 mx-auto mb-2" />
+                        <p className="text-sm text-green-700 font-medium">Sie haben bereits abgestimmt</p>
+                      </div>
+                    ) : !question.isActive ? (
+                      <div className="p-4 bg-slate-100 rounded-lg text-center">
+                        <XCircle className="h-8 w-8 text-slate-400 mx-auto mb-2" />
+                        <p className="text-sm text-slate-600 font-medium">Diese Frage wurde noch nicht freigegeben</p>
+                        <p className="text-xs text-slate-500 mt-1">Bitte warten Sie, bis der Administrator diese Frage aktiviert</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-4">
+                        <RadioGroup 
+                          value={selectedOptions[question.id] || ''} 
+                          onValueChange={(value) => setSelectedOptions({ ...selectedOptions, [question.id]: value })}
+                          className="space-y-3"
+                        >
+                          {question.options
+                            .sort((a, b) => a.order - b.order)
+                            .map((option) => (
+                              <div
+                                key={option.id}
+                                className={`flex items-center space-x-3 p-4 rounded-lg border-2 transition-all cursor-pointer ${
+                                  selectedOptions[question.id] === option.id
+                                    ? 'border-slate-800 bg-white shadow-sm'
+                                    : 'border-transparent bg-white hover:border-slate-200'
+                                }`}
+                                onClick={() => setSelectedOptions({ ...selectedOptions, [question.id]: option.id })}
+                              >
+                                <RadioGroupItem value={option.id} id={`${question.id}-${option.id}`} />
+                                <Label 
+                                  htmlFor={`${question.id}-${option.id}`} 
+                                  className="flex-1 cursor-pointer text-base"
+                                >
+                                  {option.text}
+                                </Label>
+                              </div>
+                            ))}
+                        </RadioGroup>
+
+                        <div className="flex flex-col gap-2">
+                          <Button 
+                            onClick={() => handleSubmitVote(question.id, question.allowInvalidVotes)} 
+                            size="lg" 
+                            className="w-full"
+                            disabled={loading}
+                          >
+                            {loading ? 'Wird abgesendet...' : 'Stimme abgeben'}
+                          </Button>
+                          
+                          {question.allowInvalidVotes && !selectedOptions[question.id] && (
+                            <p className="text-xs text-center text-slate-500">
+                              Sie können auch ohne Auswahl fortfahren (ungültige Stimme).
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))
+            )}
+          </div>
         )}
 
         {step === 'done' && (
@@ -324,11 +421,11 @@ function VotingContent() {
                 Vielen Dank!
               </h2>
               <p className="text-slate-600 mb-6">
-                Ihre Stimme wurde erfolgreich und anonym abgegeben.
+                Alle Ihre Stimmen wurden erfolgreich und anonym abgegeben.
               </p>
               <div className="p-4 bg-slate-50 rounded-lg text-sm text-slate-600">
-                <p>Sie können dieses Fenster nun schließen.</p>
-                <p className="mt-2">Der verwendete Code ist nicht mehr gültig.</p>
+                <p>Sie haben bei allen aktiven Wahlfragen abgestimmt.</p>
+                <p className="mt-2">Sie können dieses Fenster nun schließen.</p>
               </div>
             </CardContent>
           </Card>

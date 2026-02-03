@@ -13,7 +13,7 @@ import { Switch } from '@/components/ui/switch'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog'
 import { useToast } from '@/components/ui/use-toast'
-import { ArrowLeft, Save, Trash2, Play, Square, Printer, BarChart3, Users } from 'lucide-react'
+import { ArrowLeft, Save, Trash2, Play, Square, Printer, BarChart3, Users, MessageSquare } from 'lucide-react'
 import type { Election } from '@/types'
 import { formatDate } from '@/lib/utils'
 
@@ -32,12 +32,12 @@ export default function ElectionDetailPage() {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
-    question: '',
     invitationText: '',
-    allowInvalidVotes: true,
     showLinkWithCode: false,
     maxVoters: 50
   })
+  
+  const [questionCount, setQuestionCount] = useState(0)
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -69,9 +69,6 @@ export default function ElectionDetailPage() {
           associationId: data.associationId,
           title: data.title,
           description: data.description,
-          question: data.question,
-          options: data.options,
-          allowInvalidVotes: data.allowInvalidVotes,
           electionDate: data.electionDate?.toDate() || new Date(),
           maxVoters: data.maxVoters,
           invitationText: data.invitationText,
@@ -86,17 +83,28 @@ export default function ElectionDetailPage() {
         setFormData({
           title: electionData.title,
           description: electionData.description,
-          question: electionData.question,
           invitationText: electionData.invitationText,
-          allowInvalidVotes: electionData.allowInvalidVotes,
           showLinkWithCode: electionData.showLinkWithCode,
           maxVoters: electionData.maxVoters
         })
+        
+        const questionsRef = collection(db, 'electionQuestions')
+        const questionsQuery = query(questionsRef, where('electionId', '==', electionId))
+        const questionsSnap = await getDocs(questionsQuery)
+        setQuestionCount(questionsSnap.size)
 
         const codesRef = collection(db, 'voterCodes')
-        const q = query(codesRef, where('electionId', '==', electionId), where('hasVoted', '==', true))
+        const q = query(codesRef, where('electionId', '==', electionId))
         const codesSnap = await getDocs(q)
-        setVotedCount(codesSnap.size)
+        
+        let votedCodesCount = 0
+        codesSnap.forEach((doc) => {
+          const data = doc.data()
+          if (data.votedQuestions && data.votedQuestions.length > 0) {
+            votedCodesCount++
+          }
+        })
+        setVotedCount(votedCodesCount)
       } else {
         router.push('/admin')
       }
@@ -121,9 +129,7 @@ export default function ElectionDetailPage() {
       const electionData = {
         title: formData.title,
         description: formData.description,
-        question: formData.question,
         invitationText: formData.invitationText,
-        allowInvalidVotes: formData.allowInvalidVotes,
         showLinkWithCode: formData.showLinkWithCode,
         maxVoters: formData.maxVoters,
         updatedAt: Timestamp.now()
@@ -269,7 +275,7 @@ export default function ElectionDetailPage() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <h1 className="text-2xl font-bold text-slate-800">{election.title}</h1>
-            <p className="text-slate-600">{election.question}</p>
+            <p className="text-slate-600">{election.description || 'Keine Beschreibung'}</p>
           </div>
           <div className="flex items-center gap-2">
             {canActivate && (
@@ -320,7 +326,19 @@ export default function ElectionDetailPage() {
           </Card>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-4 mb-8">
+        <div className="grid md:grid-cols-3 gap-4 mb-8">
+          <Button 
+            variant="outline" 
+            className="h-auto py-4"
+            onClick={() => router.push(`/admin/wahl/${electionId}/fragen`)}
+          >
+            <MessageSquare className="h-5 w-5 mr-2" />
+            <div className="text-left">
+              <div className="font-medium">Wahlfragen ({questionCount})</div>
+              <div className="text-sm text-slate-500">Fragen erstellen und verwalten</div>
+            </div>
+          </Button>
+          
           <Button 
             variant="outline" 
             className="h-auto py-4"
@@ -375,26 +393,6 @@ export default function ElectionDetailPage() {
                 onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 disabled={!canEdit}
               />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="question">Wahlfrage</Label>
-              <Input
-                id="question"
-                value={formData.question}
-                onChange={(e) => setFormData({ ...formData, question: e.target.value })}
-                disabled={!canEdit}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Antwortmöglichkeiten</Label>
-              {election.options.map((option, index) => (
-                <div key={option.id} className="flex items-center gap-2 p-2 bg-slate-50 rounded">
-                  <span className="text-slate-500 text-sm w-6">{index + 1}.</span>
-                  <span>{option.text}</span>
-                </div>
-              ))}
             </div>
 
             <div className="space-y-2">

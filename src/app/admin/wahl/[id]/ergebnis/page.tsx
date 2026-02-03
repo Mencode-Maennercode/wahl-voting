@@ -12,7 +12,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useToast } from '@/components/ui/use-toast'
 import { ArrowLeft, Download, Trash2, BarChart3, Users, CheckCircle2, XCircle } from 'lucide-react'
 import { jsPDF } from 'jspdf'
-import type { Election, ElectionResult, OptionResult, Vote } from '@/types'
+import type { Election, ElectionResult, ElectionQuestion, QuestionResult, OptionResult, Vote } from '@/types'
 import { formatDate } from '@/lib/utils'
 
 export default function ResultsPage() {
@@ -23,6 +23,7 @@ export default function ResultsPage() {
   const electionId = params.id as string
 
   const [election, setElection] = useState<Election | null>(null)
+  const [questions, setQuestions] = useState<ElectionQuestion[]>([])
   const [result, setResult] = useState<ElectionResult | null>(null)
   const [loading, setLoading] = useState(true)
   const [evaluating, setEvaluating] = useState(false)
@@ -57,9 +58,6 @@ export default function ResultsPage() {
           associationId: data.associationId,
           title: data.title,
           description: data.description,
-          question: data.question,
-          options: data.options,
-          allowInvalidVotes: data.allowInvalidVotes,
           electionDate: data.electionDate?.toDate() || new Date(),
           maxVoters: data.maxVoters,
           invitationText: data.invitationText,
@@ -72,7 +70,30 @@ export default function ResultsPage() {
 
         setElection(electionData)
         
-        await calculateResults(electionData)
+        const questionsRef = collection(db, 'electionQuestions')
+        const questionsQuery = query(questionsRef, where('electionId', '==', electionId))
+        const questionsSnap = await getDocs(questionsQuery)
+        
+        const loadedQuestions: ElectionQuestion[] = []
+        questionsSnap.forEach((qDoc) => {
+          const qData = qDoc.data()
+          loadedQuestions.push({
+            id: qDoc.id,
+            electionId: qData.electionId,
+            question: qData.question,
+            options: qData.options,
+            allowInvalidVotes: qData.allowInvalidVotes,
+            isActive: qData.isActive,
+            order: qData.order,
+            createdAt: qData.createdAt?.toDate() || new Date(),
+            updatedAt: qData.updatedAt?.toDate() || new Date()
+          })
+        })
+        
+        loadedQuestions.sort((a, b) => a.order - b.order)
+        setQuestions(loadedQuestions)
+        
+        await calculateResults(electionData, loadedQuestions)
       } else {
         router.push('/admin')
       }
@@ -88,7 +109,7 @@ export default function ResultsPage() {
     }
   }
 
-  const calculateResults = async (electionData: Election) => {
+  const calculateResults = async (electionData: Election, questionsData: ElectionQuestion[]) => {
     try {
       const votesRef = collection(db, 'votes')
       const q = query(votesRef, where('electionId', '==', electionId))
@@ -100,6 +121,7 @@ export default function ResultsPage() {
         votes.push({
           id: doc.id,
           electionId: data.electionId,
+          questionId: data.questionId,
           optionId: data.optionId,
           isInvalid: data.isInvalid,
           votedAt: data.votedAt?.toDate() || new Date()
@@ -110,30 +132,39 @@ export default function ResultsPage() {
       const codesQ = query(codesRef, where('electionId', '==', electionId))
       const codesSnap = await getDocs(codesQ)
 
-      const totalVotes = votes.length
-      const invalidVotes = votes.filter(v => v.isInvalid).length
-      const validVotes = votes.filter(v => !v.isInvalid)
+      const questionResults: QuestionResult[] = questionsData.map(question => {
+        const questionVotes = votes.filter(v => v.questionId === question.id)
+        const totalVotes = questionVotes.length
+        const invalidVotes = questionVotes.filter(v => v.isInvalid).length
+        const validVotes = questionVotes.filter(v => !v.isInvalid)
 
-      const optionResults: OptionResult[] = electionData.options.map(option => {
-        const optionVotes = validVotes.filter(v => v.optionId === option.id).length
+        const optionResults: OptionResult[] = question.options.map(option => {
+          const optionVotes = validVotes.filter(v => v.optionId === option.id).length
+          const validTotal = totalVotes - invalidVotes
+          return {
+            optionId: option.id,
+            text: option.text,
+            votes: optionVotes,
+            percentage: validTotal > 0 ? (optionVotes / validTotal) * 100 : 0
+          }
+        })
+
+        optionResults.sort((a, b) => b.votes - a.votes)
+
         return {
-          optionId: option.id,
-          text: option.text,
-          votes: optionVotes,
-          percentage: totalVotes > 0 ? (optionVotes / (totalVotes - invalidVotes)) * 100 : 0
+          questionId: question.id,
+          question: question.question,
+          totalVotes: totalVotes,
+          invalidVotes: invalidVotes,
+          options: optionResults
         }
       })
-
-      optionResults.sort((a, b) => b.votes - a.votes)
 
       const resultData: ElectionResult = {
         electionId: electionId,
         title: electionData.title,
-        question: electionData.question,
+        questions: questionResults,
         totalVoters: codesSnap.size,
-        totalVotes: totalVotes,
-        invalidVotes: invalidVotes,
-        options: optionResults,
         evaluatedAt: new Date()
       }
 
@@ -166,35 +197,36 @@ export default function ResultsPage() {
     y += 15
     
     pdf.setFontSize(12)
-    pdf.text('Wahlfrage:', 20, y)
-    y += 7
-    pdf.setFontSize(10)
-    pdf.text(result.question, 20, y)
+    pdf.text(`Berechtigte Wähler: ${result.totalVoters}`, 20, y)
     y += 15
     
-    pdf.setFontSize(12)
-    pdf.text('Wahlbeteiligung:', 20, y)
-    y += 7
-    pdf.setFontSize(10)
-    const participation = result.totalVoters > 0 
-      ? ((result.totalVotes / result.totalVoters) * 100).toFixed(1) 
-      : '0'
-    pdf.text(`${result.totalVotes} von ${result.totalVoters} Stimmen (${participation}%)`, 20, y)
-    y += 7
-    pdf.text(`Davon ungültig: ${result.invalidVotes}`, 20, y)
-    y += 15
-    
-    pdf.setFontSize(12)
-    pdf.text('Ergebnis:', 20, y)
-    y += 10
-    
-    pdf.setFontSize(10)
-    result.options.forEach((option, index) => {
-      const validVotes = result.totalVotes - result.invalidVotes
-      const percentage = validVotes > 0 ? ((option.votes / validVotes) * 100).toFixed(1) : '0'
-      pdf.text(`${index + 1}. ${option.text}`, 25, y)
-      y += 6
-      pdf.text(`   ${option.votes} Stimmen (${percentage}%)`, 25, y)
+    result.questions.forEach((questionResult, qIndex) => {
+      if (y > 250) {
+        pdf.addPage()
+        y = 20
+      }
+      
+      pdf.setFontSize(14)
+      pdf.text(`Frage ${qIndex + 1}:`, 20, y)
+      y += 7
+      pdf.setFontSize(10)
+      pdf.text(questionResult.question, 20, y)
+      y += 10
+      
+      pdf.setFontSize(11)
+      pdf.text(`Stimmen: ${questionResult.totalVotes} (davon ungültig: ${questionResult.invalidVotes})`, 20, y)
+      y += 10
+      
+      pdf.setFontSize(10)
+      questionResult.options.forEach((option, index) => {
+        const validVotes = questionResult.totalVotes - questionResult.invalidVotes
+        const percentage = validVotes > 0 ? option.percentage.toFixed(1) : '0'
+        pdf.text(`${index + 1}. ${option.text}`, 25, y)
+        y += 6
+        pdf.text(`   ${option.votes} Stimmen (${percentage}%)`, 25, y)
+        y += 8
+      })
+      
       y += 10
     })
     
@@ -221,6 +253,12 @@ export default function ResultsPage() {
 
     try {
       await handleExportPdf()
+
+      const questionsRef = collection(db, 'electionQuestions')
+      const questionsQ = query(questionsRef, where('electionId', '==', electionId))
+      const questionsSnap = await getDocs(questionsQ)
+      const deleteQuestionsPromises = questionsSnap.docs.map(d => deleteDoc(d.ref))
+      await Promise.all(deleteQuestionsPromises)
 
       const votesRef = collection(db, 'votes')
       const votesQ = query(votesRef, where('electionId', '==', electionId))
@@ -267,9 +305,8 @@ export default function ResultsPage() {
 
   if (!election || !result) return null
 
-  const participation = result.totalVoters > 0 
-    ? ((result.totalVotes / result.totalVoters) * 100).toFixed(1) 
-    : '0'
+  const totalVotesAcrossQuestions = result.questions.reduce((sum, q) => sum + q.totalVotes, 0)
+  const totalInvalidVotesAcrossQuestions = result.questions.reduce((sum, q) => sum + q.invalidVotes, 0)
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -326,8 +363,8 @@ export default function ResultsPage() {
               <div className="flex items-center gap-3">
                 <Users className="h-8 w-8 text-slate-400" />
                 <div>
-                  <div className="text-2xl font-bold">{result.totalVotes}</div>
-                  <div className="text-sm text-slate-500">Stimmen abgegeben</div>
+                  <div className="text-2xl font-bold">{result.totalVoters}</div>
+                  <div className="text-sm text-slate-500">Berechtigte Wähler</div>
                 </div>
               </div>
             </CardContent>
@@ -338,8 +375,8 @@ export default function ResultsPage() {
               <div className="flex items-center gap-3">
                 <BarChart3 className="h-8 w-8 text-slate-400" />
                 <div>
-                  <div className="text-2xl font-bold">{participation}%</div>
-                  <div className="text-sm text-slate-500">Wahlbeteiligung</div>
+                  <div className="text-2xl font-bold">{totalVotesAcrossQuestions}</div>
+                  <div className="text-sm text-slate-500">Stimmen gesamt</div>
                 </div>
               </div>
             </CardContent>
@@ -350,7 +387,7 @@ export default function ResultsPage() {
               <div className="flex items-center gap-3">
                 <XCircle className="h-8 w-8 text-slate-400" />
                 <div>
-                  <div className="text-2xl font-bold">{result.invalidVotes}</div>
+                  <div className="text-2xl font-bold">{totalInvalidVotesAcrossQuestions}</div>
                   <div className="text-sm text-slate-500">Ungültige Stimmen</div>
                 </div>
               </div>
@@ -358,39 +395,46 @@ export default function ResultsPage() {
           </Card>
         </div>
 
-        <Card className="mb-8">
-          <CardHeader>
-            <CardTitle>{result.question}</CardTitle>
-            <CardDescription>
-              {result.totalVotes - result.invalidVotes} gültige Stimmen
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {result.options.map((option, index) => {
-              const validVotes = result.totalVotes - result.invalidVotes
-              const percentage = validVotes > 0 ? (option.votes / validVotes) * 100 : 0
-              const isWinner = index === 0 && option.votes > 0
+        {result.questions.map((questionResult, qIndex) => (
+          <Card key={questionResult.questionId} className="mb-6">
+            <CardHeader>
+              <div className="flex items-center gap-2 mb-2">
+                <span className="px-2 py-1 bg-slate-100 text-slate-700 text-xs rounded-full font-medium">
+                  Frage {qIndex + 1}
+                </span>
+              </div>
+              <CardTitle className="text-lg">{questionResult.question}</CardTitle>
+              <CardDescription>
+                {questionResult.totalVotes} Stimmen ({questionResult.totalVotes - questionResult.invalidVotes} gültig, {questionResult.invalidVotes} ungültig)
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {questionResult.options.map((option, index) => {
+                const validVotes = questionResult.totalVotes - questionResult.invalidVotes
+                const percentage = validVotes > 0 ? option.percentage : 0
+                const isWinner = index === 0 && option.votes > 0
 
-              return (
-                <div key={option.optionId} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {isWinner && <CheckCircle2 className="h-5 w-5 text-green-600" />}
-                      <span className={`font-medium ${isWinner ? 'text-green-700' : ''}`}>
-                        {option.text}
-                      </span>
+                return (
+                  <div key={option.optionId} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {isWinner && <CheckCircle2 className="h-5 w-5 text-green-600" />}
+                        <span className={`font-medium ${isWinner ? 'text-green-700' : ''}`}>
+                          {option.text}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <span className="font-bold">{option.votes}</span>
+                        <span className="text-slate-500 ml-2">({percentage.toFixed(1)}%)</span>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <span className="font-bold">{option.votes}</span>
-                      <span className="text-slate-500 ml-2">({percentage.toFixed(1)}%)</span>
-                    </div>
+                    <Progress value={percentage} className={isWinner ? 'bg-green-100' : ''} />
                   </div>
-                  <Progress value={percentage} className={isWinner ? 'bg-green-100' : ''} />
-                </div>
-              )
-            })}
-          </CardContent>
-        </Card>
+                )
+              })}
+            </CardContent>
+          </Card>
+        ))}
 
         {election.status === 'evaluated' && (
           <Card className="border-blue-200 bg-blue-50">
