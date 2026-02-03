@@ -53,6 +53,7 @@ export default function ResultsPage() {
           return
         }
 
+        // Fixed: Ensure correct property names for Election type
         const electionData: Election = {
           id: docSnap.id,
           associationId: data.associationId,
