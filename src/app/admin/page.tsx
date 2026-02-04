@@ -356,6 +356,7 @@ export default function AdminDashboard() {
         votes.push({
           id: doc.id,
           electionId: data.electionId,
+          questionId: data.questionId,
           optionId: data.optionId,
           isInvalid: data.isInvalid,
           votedAt: data.votedAt?.toDate() || new Date()
