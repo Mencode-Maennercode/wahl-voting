@@ -131,8 +131,8 @@ function VotingContent() {
           question: qData.question,
           options: qData.options,
           allowInvalidVotes: qData.allowInvalidVotes,
-          isActive: qData.isActive,
-          order: qData.order,
+          status: qData.status || 'active',
+          order: qData.order || 0,
           createdAt: qData.createdAt?.toDate() || new Date(),
           updatedAt: qData.updatedAt?.toDate() || new Date()
         })
@@ -199,7 +199,7 @@ function VotingContent() {
       setVotedQuestions(updatedVotedQuestions)
       
       const allQuestionsVoted = questions.every(q => 
-        updatedVotedQuestions.includes(q.id) || !q.isActive
+        updatedVotedQuestions.includes(q.id) || q.status !== 'active'
       )
       
       if (allQuestionsVoted) {
