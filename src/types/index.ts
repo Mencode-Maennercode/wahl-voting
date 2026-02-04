@@ -23,34 +23,40 @@ export interface Association {
   updatedAt: Date
 }
 
-export interface Election {
+export interface Event {
   id: string
   associationId: string
   title: string
   description: string
-  electionDate: Date
+  startDate: Date
+  endDate?: Date
+  startTime: string
+  endTime?: string
   maxVoters: number
   invitationText: string
   showLinkWithCode: boolean
   status: 'draft' | 'active' | 'closed' | 'evaluated'
-  codesGenerated: boolean
+  templateId?: string
   createdAt: Date
   updatedAt: Date
 }
 
-export interface ElectionQuestion {
+export interface EventQuestion {
   id: string
-  electionId: string
+  eventId: string
   question: string
-  options: ElectionOption[]
+  options: QuestionOption[]
   allowInvalidVotes: boolean
-  isActive: boolean
+  status: 'draft' | 'active' | 'closed' | 'evaluated'
+  startedAt?: Date
+  closedAt?: Date
+  evaluatedAt?: Date
   order: number
   createdAt: Date
   updatedAt: Date
 }
 
-export interface ElectionOption {
+export interface QuestionOption {
   id: string
   text: string
   order: number
@@ -58,7 +64,7 @@ export interface ElectionOption {
 
 export interface VoterCode {
   id: string
-  electionId: string
+  eventId: string
   code: string
   votedQuestions: string[]
   createdAt: Date
@@ -66,15 +72,15 @@ export interface VoterCode {
 
 export interface Vote {
   id: string
-  electionId: string
+  eventId: string
   questionId: string
   optionId: string | null
   isInvalid: boolean
   votedAt: Date
 }
 
-export interface ElectionResult {
-  electionId: string
+export interface EventResult {
+  eventId: string
   title: string
   questions: QuestionResult[]
   totalVoters: number
