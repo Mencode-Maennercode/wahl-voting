@@ -159,7 +159,17 @@ export default function AdminDashboard() {
     }
 
     try {
-      const eventData = {
+      const eventData: {
+        title: string
+        description: string
+        startDate: Date
+        startTime: string
+        maxVoters: number
+        invitationText: string
+        showLinkWithCode: boolean
+        endDate?: Date
+        endTime?: string
+      } = {
         title: newEvent.title,
         description: newEvent.description,
         startDate: new Date(newEvent.startDate),
@@ -260,59 +270,6 @@ export default function AdminDashboard() {
     }
   }
 
-  const startElection = async (electionId: string) => {
-    try {
-      const electionRef = doc(db, 'elections', electionId)
-      await updateDoc(electionRef, {
-        status: 'active',
-        updatedAt: Timestamp.now()
-      })
-      
-      toast({
-        title: "Wahl gestartet",
-        description: "Die Wahl wurde erfolgreich gestartet und ist nun aktiv."
-      })
-      
-      loadElections()
-    } catch (error) {
-      console.error('Error starting election:', error)
-      toast({
-        title: "Fehler",
-        description: "Die Wahl konnte nicht gestartet werden.",
-        variant: "destructive"
-      })
-    }
-  }
-
-  const closeElection = async (electionId: string) => {
-    try {
-      const electionRef = doc(db, 'elections', electionId)
-      await updateDoc(electionRef, {
-        status: 'closed',
-        updatedAt: Timestamp.now()
-      })
-      
-      toast({
-        title: "Wahl geschlossen",
-        description: "Die Wahl wurde erfolgreich geschlossen. Es können keine weiteren Stimmen abgegeben werden."
-      })
-      
-      loadElections()
-    } catch (error) {
-      console.error('Error closing election:', error)
-      toast({
-        title: "Fehler",
-        description: "Die Wahl konnte nicht geschlossen werden.",
-        variant: "destructive"
-      })
-    }
-  }
-
-  const calculateResults = async (election: Election) => {
-    // Mit dem neuen Mehrfragen-Modell erfolgt die detaillierte Auswertung
-    // in der speziellen Ergebnisseite der Wahl.
-    router.push(`/admin/wahl/${election.id}/ergebnis`)
-  }
 
   const generateAITemplate = () => {
     const eventType = newEvent.title.toLowerCase()

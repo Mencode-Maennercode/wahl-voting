@@ -100,7 +100,7 @@ export default function EventCodesPage({ params }: { params: { id: string } }) {
           id: doc.id,
           eventId: data.eventId,
           code: data.code,
-          used: data.used,
+          votedQuestions: data.votedQuestions || [],
           createdAt: data.createdAt?.toDate() || new Date()
         })
       })
@@ -126,7 +126,7 @@ export default function EventCodesPage({ params }: { params: { id: string } }) {
         const voterCode = {
           eventId: event.id,
           code,
-          used: false,
+          votedQuestions: [],
           createdAt: Timestamp.now()
         }
 
@@ -135,7 +135,7 @@ export default function EventCodesPage({ params }: { params: { id: string } }) {
           id: docRef.id,
           eventId: event.id,
           code,
-          used: false,
+          votedQuestions: [],
           createdAt: new Date()
         })
       }
@@ -320,7 +320,7 @@ export default function EventCodesPage({ params }: { params: { id: string } }) {
   }
 
   const codesGenerated = voterCodes.length > 0
-  const allCodesUsed = voterCodes.filter(code => code.used).length === voterCodes.length
+  const allCodesUsed = voterCodes.filter(code => code.votedQuestions.length > 0).length === voterCodes.length
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -367,7 +367,7 @@ export default function EventCodesPage({ params }: { params: { id: string } }) {
             </Card>
             <Card>
               <CardContent className="pt-6">
-                <div className="text-2xl font-bold text-amber-600">{voterCodes.filter(c => c.used).length}</div>
+                <div className="text-2xl font-bold text-amber-600">{voterCodes.filter(c => c.votedQuestions.length > 0).length}</div>
                 <p className="text-xs text-slate-600">Codes verwendet</p>
               </CardContent>
             </Card>
@@ -503,13 +503,13 @@ export default function EventCodesPage({ params }: { params: { id: string } }) {
                   <div className="flex justify-between text-sm">
                     <span>Codes verwendet:</span>
                     <span className="font-medium">
-                      {voterCodes.filter(c => c.used).length} / {voterCodes.length}
+                      {voterCodes.filter(c => c.votedQuestions.length > 0).length} / {voterCodes.length}
                     </span>
                   </div>
                   <div className="w-full bg-slate-200 rounded-full h-2">
                     <div 
                       className="bg-green-600 h-2 rounded-full transition-all"
-                      style={{ width: `${(voterCodes.filter(c => c.used).length / voterCodes.length) * 100}%` }}
+                      style={{ width: `${(voterCodes.filter(c => c.votedQuestions.length > 0).length / voterCodes.length) * 100}%` }}
                     ></div>
                   </div>
                 </div>

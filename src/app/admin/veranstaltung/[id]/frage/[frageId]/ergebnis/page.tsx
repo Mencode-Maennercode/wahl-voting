@@ -73,6 +73,7 @@ export default function QuestionResultPage({ params }: { params: { id: string, f
           options: questionData.options,
           allowInvalidVotes: questionData.allowInvalidVotes,
           status: questionData.status,
+          order: questionData.order || 0,
           createdAt: questionData.createdAt?.toDate() || new Date(),
           updatedAt: questionData.updatedAt?.toDate() || new Date()
         })
@@ -88,11 +89,11 @@ export default function QuestionResultPage({ params }: { params: { id: string, f
         const data = doc.data()
         loadedVotes.push({
           id: doc.id,
+          eventId: data.eventId,
           questionId: data.questionId,
-          voterCode: data.voterCode,
-          selectedOption: data.selectedOption,
-          isValid: data.isValid,
-          timestamp: data.timestamp?.toDate() || new Date()
+          optionId: data.optionId,
+          isInvalid: data.isInvalid || false,
+          votedAt: data.votedAt?.toDate() || new Date()
         })
       })
       
@@ -107,10 +108,10 @@ export default function QuestionResultPage({ params }: { params: { id: string, f
   const calculateResults = () => {
     if (!question) return []
 
-    const results = question.options.map((option, index) => {
-      const optionVotes = votes.filter(vote => vote.selectedOption === index)
+    const results = question.options.map((option) => {
+      const optionVotes = votes.filter(vote => vote.optionId === option.id)
       return {
-        optionId: index,
+        optionId: option.id,
         text: option.text,
         votes: optionVotes.length,
         percentage: votes.length > 0 ? Math.round((optionVotes.length / votes.length) * 100) : 0
@@ -121,11 +122,11 @@ export default function QuestionResultPage({ params }: { params: { id: string, f
   }
 
   const getInvalidVotesCount = () => {
-    return votes.filter(vote => !vote.isValid).length
+    return votes.filter(vote => vote.isInvalid).length
   }
 
   const getValidVotesCount = () => {
-    return votes.filter(vote => vote.isValid).length
+    return votes.filter(vote => !vote.isInvalid).length
   }
 
   if (isLoading || loading) {

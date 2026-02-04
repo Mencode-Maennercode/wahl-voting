@@ -313,7 +313,7 @@ function VotingContent() {
                 <Card key={question.id} className={`${
                   votedQuestions.includes(question.id) 
                     ? 'border-green-200 bg-green-50/30' 
-                    : question.isActive 
+                    : question.status === 'active' 
                       ? 'border-slate-200' 
                       : 'border-slate-200 bg-slate-50/50 opacity-75'
                 }`}>
@@ -327,7 +327,7 @@ function VotingContent() {
                               <CheckCircle2 className="h-3 w-3" />
                               Abgestimmt
                             </span>
-                          ) : question.isActive ? (
+                          ) : question.status === 'active' ? (
                             <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
                               Aktiv
                             </span>
@@ -348,7 +348,7 @@ function VotingContent() {
                         <CheckCircle2 className="h-8 w-8 text-green-600 mx-auto mb-2" />
                         <p className="text-sm text-green-700 font-medium">Sie haben bereits abgestimmt</p>
                       </div>
-                    ) : !question.isActive ? (
+                    ) : question.status !== 'active' ? (
                       <div className="p-4 bg-slate-100 rounded-lg text-center">
                         <XCircle className="h-8 w-8 text-slate-400 mx-auto mb-2" />
                         <p className="text-sm text-slate-600 font-medium">Diese Frage wurde noch nicht freigegeben</p>
