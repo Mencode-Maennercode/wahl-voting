@@ -1,9 +1,9 @@
 "use client"
 
-import { useEffect, useState, Suspense } from 'react'
+import { useEffect, useState, useRef, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { db } from '@/lib/firebase'
-import { collection, query, where, getDocs, doc, getDoc, addDoc, updateDoc, Timestamp } from 'firebase/firestore'
+import { collection, query, where, getDocs, doc, getDoc, addDoc, updateDoc, Timestamp, onSnapshot } from 'firebase/firestore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -29,6 +29,7 @@ function VotingContent() {
   const [pendingInvalidQuestionId, setPendingInvalidQuestionId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState('')
   const [votedQuestions, setVotedQuestions] = useState<string[]>([])
+  const questionsUnsubscribe = useRef<null | (() => void)>(null)
 
   useEffect(() => {
     // Always show code input dialog, even if code is in URL
@@ -37,6 +38,16 @@ function VotingContent() {
       setInputCode(codeFromUrl.toUpperCase())
     }
   }, [searchParams])
+
+  // Clean up Firestore listeners on unmount
+  useEffect(() => {
+    return () => {
+      if (questionsUnsubscribe.current) {
+        questionsUnsubscribe.current()
+        questionsUnsubscribe.current = null
+      }
+    }
+  }, [])
 
   const handleVerifyCode = async (codeToVerify?: string) => {
     const code = (codeToVerify || inputCode).toUpperCase().trim()
@@ -120,8 +131,9 @@ function VotingContent() {
 
       const questionsRef = collection(db, 'eventQuestions')
       const questionsQuery = query(questionsRef, where('eventId', '==', codeData.eventId))
+
+      // Initial load of questions
       const questionsSnap = await getDocs(questionsQuery)
-      
       const loadedQuestions: EventQuestion[] = []
       questionsSnap.forEach((qDoc) => {
         const qData = qDoc.data()
@@ -131,18 +143,43 @@ function VotingContent() {
           question: qData.question,
           options: qData.options,
           allowInvalidVotes: qData.allowInvalidVotes,
-          status: qData.status || 'active',
+          status: qData.status || 'draft',
           order: qData.order || 0,
           createdAt: qData.createdAt?.toDate() || new Date(),
           updatedAt: qData.updatedAt?.toDate() || new Date()
         })
       })
-      
       loadedQuestions.sort((a, b) => a.order - b.order)
 
       setVoterCode(voterCodeData)
       setEvent(eventObj)
       setQuestions(loadedQuestions)
+
+      // Set up real-time listener so question status/availability updates live
+      if (questionsUnsubscribe.current) {
+        questionsUnsubscribe.current()
+        questionsUnsubscribe.current = null
+      }
+
+      questionsUnsubscribe.current = onSnapshot(questionsQuery, (snapshot) => {
+        const liveQuestions: EventQuestion[] = []
+        snapshot.forEach((qDoc) => {
+          const qData = qDoc.data()
+          liveQuestions.push({
+            id: qDoc.id,
+            eventId: qData.eventId,
+            question: qData.question,
+            options: qData.options,
+            allowInvalidVotes: qData.allowInvalidVotes,
+            status: qData.status || 'draft',
+            order: qData.order || 0,
+            createdAt: qData.createdAt?.toDate() || new Date(),
+            updatedAt: qData.updatedAt?.toDate() || new Date()
+          })
+        })
+        liveQuestions.sort((a, b) => a.order - b.order)
+        setQuestions(liveQuestions)
+      })
       setStep('voting')
     } catch (error) {
       console.error('Error verifying code:', error)

@@ -11,40 +11,30 @@
       "static/css/app/layout.css",
       "static/chunks/app/layout.js"
     ],
-    "/admin/page": [
+    "/abstimmen/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/admin/page.js"
-    ],
-    "/admin/einstellungen/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/einstellungen/page.js"
-    ],
-    "/admin/veranstaltung/[id]/fragen/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/veranstaltung/[id]/fragen/page.js"
-    ],
-    "/admin/veranstaltung/[id]/frage/[frageId]/ergebnis/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/veranstaltung/[id]/frage/[frageId]/ergebnis/page.js"
-    ],
-    "/admin/veranstaltung/[id]/page": [
-      "static/chunks/webpack.js",
-      "static/chunks/main-app.js",
-      "static/chunks/app/admin/veranstaltung/[id]/page.js"
+      "static/chunks/app/abstimmen/page.js"
     ],
     "/admin/veranstaltung/[id]/codes/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
       "static/chunks/app/admin/veranstaltung/[id]/codes/page.js"
     ],
-    "/admin/veranstaltung/[id]/ergebnis/page": [
+    "/admin/veranstaltung/[id]/page": [
       "static/chunks/webpack.js",
       "static/chunks/main-app.js",
-      "static/chunks/app/admin/veranstaltung/[id]/ergebnis/page.js"
+      "static/chunks/app/admin/veranstaltung/[id]/page.js"
+    ],
+    "/admin/einstellungen/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/einstellungen/page.js"
+    ],
+    "/admin/page": [
+      "static/chunks/webpack.js",
+      "static/chunks/main-app.js",
+      "static/chunks/app/admin/page.js"
     ],
     "/not-found": [
       "static/chunks/webpack.js",

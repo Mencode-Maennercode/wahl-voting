@@ -1,19 +1,9 @@
 "use client"
 
 import { useEffect, useState } from 'react'
-
-import dynamic from 'next/dynamic'
-
-// Dynamically import TemplateEditor to avoid SSR issues
-const TemplateEditor = dynamic(() => import('@/components/ui/TemplateEditor').then(mod => mod.default), {
-  ssr: false,
-  loading: () => <div className="border border-slate-200 rounded-lg h-[300px] flex items-center justify-center text-slate-500">Laden...</div>
-})
-
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/context/AuthContext'
 import { db } from '@/lib/firebase'
-import { EventService } from '@/lib/event-service'
 import { collection, query, where, getDocs, addDoc, deleteDoc, doc, updateDoc, Timestamp } from 'firebase/firestore'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -24,8 +14,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { useToast } from '@/components/ui/use-toast'
 import { Progress } from '@/components/ui/progress'
-import { Vote as VoteIcon, Plus, LogOut, Settings, Trash2, Eye, Printer, BarChart3, Calendar, Users, CheckCircle2, Palette, Sparkles, Play, Square, TrendingUp, Clock, AlertTriangle } from 'lucide-react'
-import type { Event, EventQuestion, BallotTemplate, EventResult, OptionResult, Vote } from '@/types'
+import { Vote as VoteIcon, Plus, LogOut, Settings, Trash2, Eye, Printer, BarChart3, Calendar, Users, CheckCircle2, Play, Square, TrendingUp, Clock, AlertTriangle } from 'lucide-react'
+import type { Event, EventQuestion, EventResult, OptionResult, Vote } from '@/types'
 import { generateUniqueCode, formatDate, formatDateShort } from '@/lib/utils'
 
 export default function AdminDashboard() {
@@ -36,8 +26,8 @@ export default function AdminDashboard() {
   const [events, setEvents] = useState<Event[]>([])
   const [loadingEvents, setLoadingEvents] = useState(true)
   const [showNewEvent, setShowNewEvent] = useState(false)
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
   const [showResultsDialog, setShowResultsDialog] = useState(false)
+  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
   const [eventResults, setEventResults] = useState<EventResult | null>(null)
   const [loadingResults, setLoadingResults] = useState(false)
   const [countdowns, setCountdowns] = useState<Record<string, string>>({})
@@ -50,21 +40,7 @@ export default function AdminDashboard() {
     endDate: '',
     endTime: '',
     maxVoters: 50,
-    invitationText: 'Sie sind herzlich eingeladen, an der Abstimmung teilzunehmen. Bitte scannen Sie den QR-Code oder geben Sie den Code auf der Webseite ein.',
     showLinkWithCode: false
-  })
-  
-  const [templatePreview, setTemplatePreview] = useState<BallotTemplate>({
-    showLogo: true,
-    showHeader: true,
-    showFooter: true,
-    headerText: '',
-    footerText: '',
-    backgroundColor: '#ffffff',
-    textColor: '#1e293b',
-    logoUrl: '',
-    customStyles: '',
-    richContent: ''
   })
 
   useEffect(() => {
@@ -76,18 +52,6 @@ export default function AdminDashboard() {
   useEffect(() => {
     if (association) {
       loadEvents()
-      setTemplatePreview(association.ballotTemplate || {
-        showLogo: true,
-        showHeader: true,
-        showFooter: true,
-        headerText: '',
-        footerText: '',
-        backgroundColor: '#ffffff',
-        textColor: '#1e293b',
-        logoUrl: '',
-        customStyles: '',
-        richContent: ''
-      })
     }
   }, [association])
 
@@ -132,7 +96,31 @@ export default function AdminDashboard() {
     if (!association) return
     
     try {
-      const loadedEvents = await EventService.getEvents(association.id)
+      const eventsRef = collection(db, 'events')
+      const eventsQuery = query(eventsRef, where('associationId', '==', association.id))
+      const eventsSnapshot = await getDocs(eventsQuery)
+      
+      const loadedEvents: Event[] = []
+      eventsSnapshot.forEach((doc) => {
+        const data = doc.data()
+        loadedEvents.push({
+          id: doc.id,
+          associationId: data.associationId,
+          title: data.title,
+          description: data.description,
+          startDate: data.startDate?.toDate() || new Date(),
+          endDate: data.endDate?.toDate(),
+          startTime: data.startTime,
+          endTime: data.endTime,
+          maxVoters: data.maxVoters,
+          invitationText: data.invitationText,
+          showLinkWithCode: data.showLinkWithCode,
+          status: data.status,
+          createdAt: data.createdAt?.toDate() || new Date(),
+          updatedAt: data.updatedAt?.toDate() || new Date()
+        })
+      })
+      
       setEvents(loadedEvents)
     } catch (error) {
       console.error('Error loading events:', error)
@@ -165,7 +153,6 @@ export default function AdminDashboard() {
         startDate: Date
         startTime: string
         maxVoters: number
-        invitationText: string
         showLinkWithCode: boolean
         endDate?: Date
         endTime?: string
@@ -175,7 +162,6 @@ export default function AdminDashboard() {
         startDate: new Date(newEvent.startDate),
         startTime: newEvent.startTime,
         maxVoters: newEvent.maxVoters,
-        invitationText: newEvent.invitationText,
         showLinkWithCode: newEvent.showLinkWithCode
       }
 
@@ -187,7 +173,14 @@ export default function AdminDashboard() {
         eventData.endTime = newEvent.endTime
       }
 
-      const eventId = await EventService.createEvent(association.id, eventData)
+      const eventRef = await addDoc(collection(db, 'events'), {
+        ...eventData,
+        associationId: association.id,
+        status: 'draft',
+        createdAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      })
+      const eventId = eventRef.id
       
       toast({
         title: "Veranstaltung erstellt",
@@ -203,7 +196,6 @@ export default function AdminDashboard() {
         endDate: '',
         endTime: '',
         maxVoters: 50,
-        invitationText: 'Sie sind herzlich eingeladen, an der Abstimmung teilzunehmen. Bitte scannen Sie den QR-Code oder geben Sie den Code auf der Webseite ein.',
         showLinkWithCode: false
       })
       
@@ -217,7 +209,6 @@ export default function AdminDashboard() {
       })
     }
   }
-
 
   const handleLogout = () => {
     logout()
@@ -268,181 +259,6 @@ export default function AdminDashboard() {
         variant: "destructive"
       })
     }
-  }
-
-
-  const generateAITemplate = () => {
-    const eventType = newEvent.title.toLowerCase()
-    let richContent = ''
-
-    if (eventType.includes('vorsitz') || eventType.includes('präsident')) {
-      richContent = `
-        <div style="text-align: center; margin-bottom: 30px;">
-          <h1 style="color: #1e293b; font-size: 24px; font-weight: bold; margin-bottom: 10px;">
-            Wahl des Vereinsvorsitzenden
-          </h1>
-          <p style="color: #64748b; font-size: 14px;">
-            ${newEvent.description || 'Ihre Stimme ist wichtig für die Zukunft unseres Vereins.'}
-          </p>
-        </div>
-        
-        <div style="background: #f8fafc; padding: 20px; border-radius: 8px; margin: 20px 0;">
-          <h2 style="color: #1e293b; font-size: 18px; margin-bottom: 15px;">Wahlfrage:</h2>
-          <p style="color: #334155; font-size: 16px; font-weight: 500;">
-            ${newEvent.title}
-          </p>
-        </div>
-        
-        <div style="margin: 20px 0;">
-          <h3 style="color: #1e293b; font-size: 16px; margin-bottom: 10px;">Kandidaten:</h3>
-          <p style="color: #1e293b; font-size: 15px;">Kandidaten werden hier angezeigt...</p>
-        </div>
-        
-        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
-          <p style="color: #64748b; font-size: 12px; text-align: center;">
-            Bitte wählen Sie eine Option und geben Sie Ihren Stimmzettel ab.
-          </p>
-        </div>
-      `
-    } else if (eventType.includes('kassier') || eventType.includes('schatzmeister')) {
-      richContent = `
-        <div style="text-align: center; margin-bottom: 30px;">
-          <h1 style="color: #1e293b; font-size: 24px; font-weight: bold; margin-bottom: 10px;">
-            Wahl des Kassierers
-          </h1>
-          <p style="color: #64748b; font-size: 14px;">
-            ${newEvent.description || 'Verantwortliche Verwaltung der Vereinsfinanzen'}
-          </p>
-        </div>
-        
-        <div style="background: #fef3c7; padding: 20px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #f59e0b;">
-          <h2 style="color: #92400e; font-size: 18px; margin-bottom: 15px;">Wahlfrage:</h2>
-          <p style="color: #78350f; font-size: 16px; font-weight: 500;">
-            ${newEvent.title}
-          </p>
-        </div>
-        
-        <div style="margin: 20px 0;">
-          <h3 style="color: #1e293b; font-size: 16px; margin-bottom: 10px;">Kandidaten:</h3>
-          <p style="color: #1e293b; font-size: 15px;">Kandidaten werden hier angezeigt...</p>
-        </div>
-      `
-    } else {
-      richContent = `
-        <div style="text-align: center; margin-bottom: 30px;">
-          <h1 style="color: #1e293b; font-size: 24px; font-weight: bold; margin-bottom: 10px;">
-            ${newEvent.title}
-          </h1>
-          <p style="color: #64748b; font-size: 14px;">
-            ${newEvent.description || 'Vereinsabstimmung'}
-          </p>
-        </div>
-        
-        <div style="background: #f1f5f9; padding: 20px; border-radius: 8px; margin: 20px 0;">
-          <h2 style="color: #1e293b; font-size: 18px; margin-bottom: 15px;">Wahlfrage:</h2>
-          <p style="color: #334155; font-size: 16px; font-weight: 500;">
-            ${newEvent.title}
-          </p>
-        </div>
-        
-        <div style="margin: 20px 0;">
-          <h3 style="color: #1e293b; font-size: 16px; margin-bottom: 10px;">Optionen:</h3>
-          <p style="color: #1e293b; font-size: 15px;">Optionen werden hier angezeigt...</p>
-        </div>
-      `
-    }
-
-    setTemplatePreview({ ...templatePreview, richContent })
-    
-    toast({
-      title: "KI-Design erstellt",
-      description: "Ein professionelles Design wurde generiert.",
-    })
-  }
-
-  const renderTemplatePreview = () => {
-    const template = templatePreview
-    const styles = `
-      .ballot-preview {
-        background-color: ${template.backgroundColor};
-        color: ${template.textColor};
-        padding: 2rem;
-        border: 2px solid #e2e8f0;
-        border-radius: 8px;
-        max-width: 300px;
-        margin: 0 auto;
-        font-family: Arial, sans-serif;
-        ${template.customStyles}
-      }
-      .ballot-preview h2 {
-        margin: 0 0 1rem 0;
-        font-size: 1.2rem;
-        font-weight: bold;
-      }
-      .ballot-preview p {
-        margin: 0.5rem 0;
-        line-height: 1.4;
-        font-size: 0.9rem;
-      }
-      .ballot-preview .qr-section {
-        border-top: 2px solid ${template.textColor};
-        border-bottom: 2px solid ${template.textColor};
-        padding: 1rem 0;
-        margin: 1rem 0;
-        text-align: center;
-      }
-      .ballot-preview .footer {
-        font-size: 0.7rem;
-        opacity: 0.7;
-        margin-top: 1rem;
-      }
-    `
-
-    return (
-      <div className="ballot-preview">
-        <style>{styles}</style>
-        {template.showLogo && (
-          <div className="text-center mb-3">
-            {template.logoUrl ? (
-              <img src={template.logoUrl} alt="Logo" className="h-12 mx-auto" />
-            ) : (
-              <div className="h-12 bg-gray-200 rounded flex items-center justify-center text-gray-500 text-xs">
-                Logo
-              </div>
-            )}
-          </div>
-        )}
-        
-        {template.showHeader && template.headerText && (
-          <div className="text-center mb-3">
-            <p className="text-xs">{template.headerText}</p>
-          </div>
-        )}
-        
-        <h2>{newEvent.title || 'Beispiel-Veranstaltung'}</h2>
-        <p className="text-xs">{newEvent.description || 'Beispiel-Beschreibung'}</p>
-        
-        <div className="qr-section">
-          <p className="text-xs">QR-Code</p>
-          <div className="bg-gray-200 w-20 h-20 mx-auto rounded flex items-center justify-center text-xs">
-            QR
-          </div>
-          {newEvent.showLinkWithCode && (
-            <p className="text-xs mt-1">Code: ABCD</p>
-          )}
-        </div>
-        
-        {template.showFooter && template.footerText && (
-          <div className="footer text-center">
-            <p>{template.footerText}</p>
-          </div>
-        )}
-        
-        <div className="footer text-center">
-          <p>Stimmzettel 1 von {newEvent.maxVoters}</p>
-        </div>
-      </div>
-    )
   }
 
   const getStatusBadge = (status: string) => {
@@ -514,7 +330,7 @@ export default function AdminDashboard() {
                 Neue Veranstaltung erstellen
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Neue Veranstaltung erstellen</DialogTitle>
                 <DialogDescription>
@@ -522,152 +338,91 @@ export default function AdminDashboard() {
                 </DialogDescription>
               </DialogHeader>
               
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="space-y-4 py-4">
+              <div className="space-y-4 py-4">
+                <div className="space-y-2">
+                  <Label htmlFor="title">Titel der Veranstaltung *</Label>
+                  <Input
+                    id="title"
+                    placeholder="z.B. Mitgliederversammlung 2024"
+                    value={newEvent.title}
+                    onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="description">Beschreibung</Label>
+                  <Textarea
+                    id="description"
+                    placeholder="Optionale Beschreibung der Veranstaltung"
+                    value={newEvent.description}
+                    onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
+                    rows={2}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
-                    <Label htmlFor="title">Titel der Veranstaltung *</Label>
+                    <Label htmlFor="startDate">Startdatum *</Label>
                     <Input
-                      id="title"
-                      placeholder="z.B. Mitgliederversammlung 2024"
-                      value={newEvent.title}
-                      onChange={(e) => setNewEvent({ ...newEvent, title: e.target.value })}
+                      id="startDate"
+                      type="date"
+                      value={newEvent.startDate?.split('T')[0] || ''}
+                      onChange={(e) => setNewEvent({ ...newEvent, startDate: e.target.value })}
                     />
                   </div>
-
                   <div className="space-y-2">
-                    <Label htmlFor="description">Beschreibung</Label>
-                    <Textarea
-                      id="description"
-                      placeholder="Optionale Beschreibung der Veranstaltung"
-                      value={newEvent.description}
-                      onChange={(e) => setNewEvent({ ...newEvent, description: e.target.value })}
-                      rows={2}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="startDate">Startdatum *</Label>
-                      <Input
-                        id="startDate"
-                        type="date"
-                        value={newEvent.startDate?.split('T')[0] || ''}
-                        onChange={(e) => setNewEvent({ ...newEvent, startDate: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="startTime">Startzeit *</Label>
-                      <Input
-                        id="startTime"
-                        type="time"
-                        value={newEvent.startTime}
-                        onChange={(e) => setNewEvent({ ...newEvent, startTime: e.target.value })}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="endDate">Enddatum (optional)</Label>
-                      <Input
-                        id="endDate"
-                        type="date"
-                        value={newEvent.endDate}
-                        onChange={(e) => setNewEvent({ ...newEvent, endDate: e.target.value })}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="endTime">Endzeit (optional)</Label>
-                      <Input
-                        id="endTime"
-                        type="time"
-                        value={newEvent.endTime}
-                        onChange={(e) => setNewEvent({ ...newEvent, endTime: e.target.value })}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="maxVoters">Maximale Teilnehmer</Label>
+                    <Label htmlFor="startTime">Startzeit *</Label>
                     <Input
-                      id="maxVoters"
-                      type="number"
-                      min={1}
-                      value={newEvent.maxVoters}
-                      onChange={(e) => setNewEvent({ ...newEvent, maxVoters: parseInt(e.target.value) || 50 })}
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="invitationText">Einladungstext</Label>
-                    <Textarea
-                      id="invitationText"
-                      placeholder="Text auf dem Stimmzettel"
-                      value={newEvent.invitationText}
-                      onChange={(e) => setNewEvent({ ...newEvent, invitationText: e.target.value })}
-                      rows={3}
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
-                    <div>
-                      <Label htmlFor="showLinkWithCode">Link mit Code drucken</Label>
-                      <p className="text-sm text-slate-500">Zusätzlich zum QR-Code auch Link und Code anzeigen</p>
-                    </div>
-                    <Switch
-                      id="showLinkWithCode"
-                      checked={newEvent.showLinkWithCode}
-                      onCheckedChange={(checked) => setNewEvent({ ...newEvent, showLinkWithCode: checked })}
+                      id="startTime"
+                      type="time"
+                      value={newEvent.startTime}
+                      onChange={(e) => setNewEvent({ ...newEvent, startTime: e.target.value })}
                     />
                   </div>
                 </div>
 
-                <div className="space-y-4 py-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label className="text-base font-medium">Stimmzettel-Editor</Label>
-                      <p className="text-sm text-slate-500">Erstellen Sie Ihren Stimmzettel wie in Word</p>
-                    </div>
-                    <Button 
-                      type="button" 
-                      variant="outline" 
-                      size="sm" 
-                      onClick={generateAITemplate}
-                      disabled={!newEvent.title}
-                    >
-                      <Sparkles className="h-4 w-4 mr-2" />
-                      KI-Design
-                    </Button>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="endDate">Enddatum (optional)</Label>
+                    <Input
+                      id="endDate"
+                      type="date"
+                      value={newEvent.endDate}
+                      onChange={(e) => setNewEvent({ ...newEvent, endDate: e.target.value })}
+                    />
                   </div>
-                  
-                  <TemplateEditor
-                    initialContent={templatePreview.richContent || ''}
-                    onChange={(content) => setTemplatePreview({ ...templatePreview, richContent: content })}
-                    placeholder="Gestalten Sie hier Ihren Stimmzettel..."
+                  <div className="space-y-2">
+                    <Label htmlFor="endTime">Endzeit (optional)</Label>
+                    <Input
+                      id="endTime"
+                      type="time"
+                      value={newEvent.endTime}
+                      onChange={(e) => setNewEvent({ ...newEvent, endTime: e.target.value })}
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="maxVoters">Maximale Teilnehmer</Label>
+                  <Input
+                    id="maxVoters"
+                    type="number"
+                    min={1}
+                    value={newEvent.maxVoters}
+                    onChange={(e) => setNewEvent({ ...newEvent, maxVoters: parseInt(e.target.value) || 50 })}
                   />
+                </div>
 
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">Vorschau</Label>
-                    <Card className="p-4">
-                      <div 
-                        className="prose prose-sm max-w-none"
-                        dangerouslySetInnerHTML={{ __html: templatePreview.richContent || '<p class="text-slate-500">Ihr Stimmzettel-Design wird hier angezeigt...</p>' }}
-                      />
-                    </Card>
+                <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
+                  <div>
+                    <Label htmlFor="showLinkWithCode">Link mit Code drucken</Label>
+                    <p className="text-sm text-slate-500">Zusätzlich zum QR-Code auch Link und Code anzeigen</p>
                   </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-sm font-medium">Editor-Info</Label>
-                    <p className="text-xs text-slate-600">
-                      • Verwenden Sie die Toolbar zum Formatieren von Text, Überschriften und Listen
-                    </p>
-                    <p className="text-xs text-slate-600">
-                      • Fügen Sie Bilder und Links ein für professionelle Stimmzettel
-                    </p>
-                    <p className="text-xs text-slate-600">
-                      • "KI-Design" erstellt ein professionelles Design basierend auf dem Wahltyp
-                    </p>
-                  </div>
+                  <Switch
+                    id="showLinkWithCode"
+                    checked={newEvent.showLinkWithCode}
+                    onCheckedChange={(checked) => setNewEvent({ ...newEvent, showLinkWithCode: checked })}
+                  />
                 </div>
               </div>
 

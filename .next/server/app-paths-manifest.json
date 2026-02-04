@@ -1,8 +1,8 @@
 {
   "/not-found": "app/not-found.js",
+  "/abstimmen/page": "app/abstimmen/page.js",
   "/admin/veranstaltung/[id]/codes/page": "app/admin/veranstaltung/[id]/codes/page.js",
   "/admin/veranstaltung/[id]/page": "app/admin/veranstaltung/[id]/page.js",
-  "/admin/page": "app/admin/page.js",
-  "/admin/veranstaltung/[id]/ergebnis/page": "app/admin/veranstaltung/[id]/ergebnis/page.js",
-  "/admin/veranstaltung/[id]/fragen/page": "app/admin/veranstaltung/[id]/fragen/page.js"
+  "/admin/einstellungen/page": "app/admin/einstellungen/page.js",
+  "/admin/page": "app/admin/page.js"
 }

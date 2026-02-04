@@ -33,7 +33,7 @@ export interface Event {
   startTime: string
   endTime?: string
   maxVoters: number
-  invitationText: string
+  invitationText?: string
   showLinkWithCode: boolean
   status: 'draft' | 'active' | 'closed' | 'evaluated'
   templateId?: string

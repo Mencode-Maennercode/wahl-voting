@@ -11,7 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { ArrowLeft, Download, Printer, QrCode, Users, Settings } from 'lucide-react'
-import type { Event, EventQuestion, VoterCode } from '@/types'
+import type { Event, VoterCode } from '@/types'
 import { generateUniqueCode } from '@/lib/utils'
 
 export default function EventCodesPage({ params }: { params: { id: string } }) {
@@ -19,12 +19,10 @@ export default function EventCodesPage({ params }: { params: { id: string } }) {
   const router = useRouter()
   
   const [event, setEvent] = useState<Event | null>(null)
-  const [questions, setQuestions] = useState<EventQuestion[]>([])
-  const [voterCodes, setVoterCodes] = useState<VoterCode[]>([])
+    const [voterCodes, setVoterCodes] = useState<VoterCode[]>([])
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
-  const [codesPerSheet, setCodesPerSheet] = useState(4)
-
+  
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.push('/')
@@ -57,36 +55,12 @@ export default function EventCodesPage({ params }: { params: { id: string } }) {
           startTime: eventData.startTime,
           endTime: eventData.endTime,
           maxVoters: eventData.maxVoters,
-          invitationText: eventData.invitationText,
           showLinkWithCode: eventData.showLinkWithCode,
           status: eventData.status,
           createdAt: eventData.createdAt?.toDate() || new Date(),
           updatedAt: eventData.updatedAt?.toDate() || new Date()
         })
       }
-
-      // Load questions
-      const questionsRef = collection(db, 'eventQuestions')
-      const questionsQuery = query(questionsRef, where('eventId', '==', params.id))
-      const questionsSnapshot = await getDocs(questionsQuery)
-      
-      const loadedQuestions: EventQuestion[] = []
-      questionsSnapshot.forEach((doc) => {
-        const data = doc.data()
-        loadedQuestions.push({
-          id: doc.id,
-          eventId: data.eventId,
-          question: data.question,
-          options: data.options,
-          allowInvalidVotes: data.allowInvalidVotes,
-          status: data.status,
-          order: data.order || 0,
-          createdAt: data.createdAt?.toDate() || new Date(),
-          updatedAt: data.updatedAt?.toDate() || new Date()
-        })
-      })
-      
-      setQuestions(loadedQuestions)
 
       // Load existing voter codes
       const codesRef = collection(db, 'voterCodes')
@@ -157,61 +131,69 @@ export default function EventCodesPage({ params }: { params: { id: string } }) {
   }
 
   const generateBallotHTML = (codes: VoterCode[], startIndex: number) => {
-    if (!event || questions.length === 0) return ''
+    if (!event) return ''
 
-    return `
-      <div class="ballot-sheet" style="width: 210mm; min-height: 297mm; padding: 15mm; box-sizing: border-box; font-family: Arial, sans-serif;">
-        <div class="ballot-content" style="max-width: 180mm; margin: 0 auto;">
-          <!-- Header -->
-          <div style="text-align: center; margin-bottom: 20px;">
-            <h1 style="margin: 0; font-size: 18px; color: #333;">${event.title}</h1>
-            <p style="margin: 5px 0; font-size: 14px; color: #666;">${event.description}</p>
-            <p style="margin: 5px 0; font-size: 12px; color: #888;">${formatDate(event.startDate)} um ${event.startTime}</p>
+    const baseUrl = window.location.origin
+    const entryUrl = `${baseUrl}/abstimmen`
+
+    // Wir erwarten hier max. 2 Codes pro Seite
+    const topCode = codes[0]
+    const bottomCode = codes[1]
+
+    const renderHalf = (voterCode: VoterCode | undefined, indexOffset: number) => {
+      if (!voterCode) {
+        return ''
+      }
+
+      const directUrl = `${entryUrl}?code=${voterCode.code}`
+      const qrData = event.showLinkWithCode ? directUrl : entryUrl
+      const qrSrc = `https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(qrData)}`
+
+      return `
+        <div style="flex: 1; padding: 16mm 12mm; display: flex; flex-direction: column; justify-content: center;">
+          <div style="text-align: center; margin-bottom: 16px;">
+            <h1 style="margin: 0; font-size: 22px; color: #0f172a; font-weight: 700; letter-spacing: 0.02em;">${event.title}</h1>
+            ${event.description ? `<p style=\"margin: 8px 0 0 0; font-size: 13px; color: #64748b;\">${event.description}</p>` : ''}
+            <p style="margin: 8px 0 0 0; font-size: 12px; color: #94a3b8;">${formatDate(event.startDate)} um ${event.startTime}</p>
           </div>
 
-          <!-- Questions -->
-          <div style="margin-bottom: 20px;">
-            ${questions.map((question, qIndex) => `
-              <div style="margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 4px;">
-                <h3 style="margin: 0 0 10px 0; font-size: 14px; font-weight: bold;">Frage ${qIndex + 1}: ${question.question}</h3>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 5px;">
-                  ${question.options.map((option, oIndex) => `
-                    <div style="display: flex; align-items: center; padding: 3px;">
-                      <span style="width: 20px; height: 20px; border: 1px solid #333; margin-right: 8px;"></span>
-                      <span style="font-size: 12px;">${option.text}</span>
-                    </div>
-                  `).join('')}
-                </div>
+          <div style="display: flex; flex-direction: row; align-items: center; gap: 18px; max-width: 160mm; margin: 0 auto;">
+            <div style="flex-shrink: 0;">
+              <div style="background: #ffffff; padding: 8px; border-radius: 12px; box-shadow: 0 4px 10px rgba(15,23,42,0.08); border: 1px solid #e2e8f0;">
+                <img src="${qrSrc}" alt="QR Code" style="width: 70mm; height: 70mm; border-radius: 10px;" />
               </div>
-            `).join('')}
-          </div>
-
-          <!-- Codes Grid -->
-          <div style="display: grid; grid-template-columns: repeat(${codesPerSheet}, 1fr); gap: 15px;">
-            ${codes.map((voterCode, index) => `
-              <div style="text-align: center; padding: 10px; border: 2px solid #333; border-radius: 8px; break-inside: avoid;">
-                <div style="margin-bottom: 8px;">
-                  <div style="width: 60px; height: 60px; border: 1px solid #ccc; margin: 0 auto; display: flex; align-items: center; justify-content: center; font-size: 10px; color: #999;">
-                    QR
-                  </div>
-                </div>
-                <div style="font-weight: bold; font-size: 16px; margin-bottom: 4px;">${voterCode.code}</div>
-                <div style="font-size: 10px; color: #666;">Stimmzettel ${startIndex + index + 1}</div>
-                ${event.showLinkWithCode ? `
-                  <div style="font-size: 9px; color: #888; margin-top: 4px;">
-                    ${window.location.origin}/abstimmen/${voterCode.code}
-                  </div>
-                ` : ''}
+            </div>
+            <div style="flex: 1;">
+              <div style="margin-bottom: 8px; font-size: 13px; color: #0369a1; background: #e0f2fe; border-radius: 10px; padding: 10px 14px; border: 1px solid #bae6fd;">
+                <p style="margin: 0;">
+                  Scannen Sie den QR-Code oder rufen Sie <strong>${entryUrl}</strong> auf und geben Sie den unten stehenden individuellen Code ein.
+                </p>
               </div>
-            `).join('')}
-          </div>
-
-          <!-- Footer -->
-          <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid #ddd; text-align: center; font-size: 10px; color: #888;">
-            <p>Scannen Sie den QR-Code oder geben Sie den Code auf der Webseite ein, um abzustimmen.</p>
-            ${event.invitationText ? `<p style="margin-top: 5px;">${event.invitationText}</p>` : ''}
+              <div style="font-size: 11px; color: #64748b; margin-bottom: 6px;">Ihr individueller Abstimmcode:</div>
+              <div style="font-weight: 700; font-size: 26px; letter-spacing: 0.22em; color: #0f172a; margin-bottom: 8px;">
+                ${voterCode.code}
+              </div>
+            </div>
           </div>
         </div>
+      `
+    }
+
+    return `
+      <div class="ballot-sheet" style="width: 210mm; height: 297mm; padding: 0; box-sizing: border-box; font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f8fafc; display: flex; flex-direction: column;">
+        <!-- obere Hälfte -->
+        ${renderHalf(topCode, 0)}
+
+        <!-- Schneidelinie -->
+        <div style="height: 0; border-top: 1px dashed #cbd5e1; margin: 0 12mm; position: relative;">
+          <div style="position: absolute; left: 50%; top: -9px; transform: translateX(-50%); background: #f8fafc; padding: 0 6px; font-size: 11px; color: #94a3b8; display: flex; align-items: center; gap: 4px;">
+            <span>✂</span>
+            <span>hier schneiden</span>
+          </div>
+        </div>
+
+        <!-- untere Hälfte -->
+        ${renderHalf(bottomCode, 1)}
       </div>
     `
   }
@@ -219,7 +201,7 @@ export default function EventCodesPage({ params }: { params: { id: string } }) {
   const printBallots = () => {
     if (!event || voterCodes.length === 0) return
 
-    const codesPerSheet = 4
+    const codesPerSheet = 2
     const totalSheets = Math.ceil(voterCodes.length / codesPerSheet)
     
     let printHTML = `
@@ -263,7 +245,7 @@ export default function EventCodesPage({ params }: { params: { id: string } }) {
   const downloadBallots = () => {
     if (!event || voterCodes.length === 0) return
 
-    const codesPerSheet = 4
+    const codesPerSheet = 2
     const totalSheets = Math.ceil(voterCodes.length / codesPerSheet)
     
     let htmlContent = `
@@ -373,23 +355,7 @@ export default function EventCodesPage({ params }: { params: { id: string } }) {
             </Card>
           </div>
 
-          {/* Questions Overview */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Wahlfragen ({questions.length})</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-2">
-                {questions.map((question, index) => (
-                  <div key={question.id} className="flex items-center justify-between p-3 bg-slate-50 rounded">
-                    <span className="font-medium">Frage {index + 1}: {question.question}</span>
-                    <span className="text-sm text-slate-600">{question.options.length} Optionen</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
+          
           {/* Code Generation */}
           <Card>
             <CardHeader>
@@ -432,42 +398,7 @@ export default function EventCodesPage({ params }: { params: { id: string } }) {
             </CardContent>
           </Card>
 
-          {/* Print Settings */}
-          {codesGenerated && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Druck-Einstellungen</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <Label htmlFor="codesPerSheet">Codes pro Seite</Label>
-                      <p className="text-sm text-slate-500">Anzahl der Stimmzettel pro Druckseite</p>
-                    </div>
-                    <Input
-                      id="codesPerSheet"
-                      type="number"
-                      min="1"
-                      max="8"
-                      value={codesPerSheet}
-                      onChange={(e) => setCodesPerSheet(parseInt(e.target.value) || 4)}
-                      className="w-20"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between p-4 bg-slate-50 rounded-lg">
-                    <div>
-                      <Label>Link mit Code drucken</Label>
-                      <p className="text-sm text-slate-500">URL und Code auf Stimmzetteln anzeigen</p>
-                    </div>
-                    <Switch checked={event.showLinkWithCode} disabled />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
+          
           {/* Export Options */}
           {codesGenerated && (
             <Card>
