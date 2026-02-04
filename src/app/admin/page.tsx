@@ -332,86 +332,9 @@ export default function AdminDashboard() {
   }
 
   const calculateResults = async (election: Election) => {
-    if (!association) return
-    
-    setLoadingResults(true)
-    setSelectedElection(election)
-    
-    try {
-      // Get all votes for this election
-      const votesRef = collection(db, 'votes')
-      const votesQuery = query(votesRef, where('electionId', '==', election.id))
-      const votesSnapshot = await getDocs(votesQuery)
-      
-      // Get all voter codes for this election
-      const codesRef = collection(db, 'voterCodes')
-      const codesQuery = query(codesRef, where('electionId', '==', election.id))
-      const codesSnapshot = await getDocs(codesQuery)
-      
-      const totalVoters = codesSnapshot.size
-      const votes: Vote[] = []
-      
-      votesSnapshot.forEach((doc) => {
-        const data = doc.data()
-        votes.push({
-          id: doc.id,
-          electionId: data.electionId,
-          questionId: data.questionId,
-          optionId: data.optionId,
-          isInvalid: data.isInvalid,
-          votedAt: data.votedAt?.toDate() || new Date()
-        })
-      })
-      
-      const totalVotes = votes.length
-      const invalidVotes = votes.filter(v => v.isInvalid).length
-      
-      // Calculate results for each option
-      const optionResults: OptionResult[] = election.options.map(option => {
-        const optionVotes = votes.filter(v => v.optionId === option.id).length
-        const percentage = totalVotes > 0 ? (optionVotes / totalVotes) * 100 : 0
-        
-        return {
-          optionId: option.id,
-          text: option.text,
-          votes: optionVotes,
-          percentage: Math.round(percentage * 100) / 100
-        }
-      })
-      
-      const results: ElectionResult = {
-        electionId: election.id,
-        title: election.title,
-        question: election.question,
-        totalVoters,
-        totalVotes,
-        invalidVotes,
-        options: optionResults,
-        evaluatedAt: new Date()
-      }
-      
-      setElectionResults(results)
-      setShowResultsDialog(true)
-      
-      // Update election status to evaluated
-      const electionRef = doc(db, 'elections', election.id)
-      await updateDoc(electionRef, {
-        status: 'evaluated',
-        updatedAt: Timestamp.now()
-      })
-      
-      loadElections()
-      
-    } catch (error) {
-      console.error('Error calculating results:', error)
-      toast({
-        title: "Fehler",
-        description: "Die Ergebnisse konnten nicht berechnet werden.",
-        variant: "destructive"
-      })
-    } finally {
-      setLoadingResults(false)
-    }
+    // Mit dem neuen Mehrfragen-Modell erfolgt die detaillierte Auswertung
+    // in der speziellen Ergebnisseite der Wahl.
+    router.push(`/admin/wahl/${election.id}/ergebnis`)
   }
 
   const generateAITemplate = () => {
