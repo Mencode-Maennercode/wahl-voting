@@ -12,7 +12,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { useToast } from '@/components/ui/use-toast'
 import { Vote, Shield, CheckCircle2, XCircle, AlertTriangle } from 'lucide-react'
-import type { Election, VoterCode, ElectionQuestion } from '@/types'
+import type { Event, VoterCode, EventQuestion } from '@/types'
 
 function VotingContent() {
   const searchParams = useSearchParams()
@@ -22,8 +22,8 @@ function VotingContent() {
   const [inputCode, setInputCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [voterCode, setVoterCode] = useState<VoterCode | null>(null)
-  const [election, setElection] = useState<Election | null>(null)
-  const [questions, setQuestions] = useState<ElectionQuestion[]>([])
+  const [event, setEvent] = useState<Event | null>(null)
+  const [questions, setQuestions] = useState<EventQuestion[]>([])
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string | null>>({})
   const [showInvalidWarning, setShowInvalidWarning] = useState(false)
   const [pendingInvalidQuestionId, setPendingInvalidQuestionId] = useState<string | null>(null)
@@ -68,7 +68,7 @@ function VotingContent() {
 
       const voterCodeData: VoterCode = {
         id: codeDoc.id,
-        electionId: codeData.electionId,
+        eventId: codeData.eventId,
         code: codeData.code,
         votedQuestions: codeData.votedQuestions || [],
         createdAt: codeData.createdAt?.toDate() || new Date()
@@ -76,56 +76,58 @@ function VotingContent() {
       
       setVotedQuestions(codeData.votedQuestions || [])
 
-      const electionRef = doc(db, 'elections', codeData.electionId)
-      const electionSnap = await getDoc(electionRef)
+      const eventRef = doc(db, 'events', codeData.eventId)
+      const eventSnap = await getDoc(eventRef)
 
-      if (!electionSnap.exists()) {
-        setErrorMessage('Die zugehörige Wahl existiert nicht mehr.')
+      if (!eventSnap.exists()) {
+        setErrorMessage('Die zugehörige Veranstaltung existiert nicht mehr.')
         setStep('error')
         setLoading(false)
         return
       }
 
-      const electionData = electionSnap.data()
+      const eventData = eventSnap.data()
 
-      if (electionData.status !== 'active') {
-        if (electionData.status === 'draft') {
-          setErrorMessage('Diese Wahl wurde noch nicht gestartet.')
-        } else if (electionData.status === 'closed' || electionData.status === 'evaluated') {
-          setErrorMessage('Diese Wahl ist bereits beendet.')
+      if (eventData.status !== 'active') {
+        if (eventData.status === 'draft') {
+          setErrorMessage('Diese Veranstaltung wurde noch nicht gestartet.')
+        } else if (eventData.status === 'closed' || eventData.status === 'evaluated') {
+          setErrorMessage('Diese Veranstaltung ist bereits beendet.')
         } else {
-          setErrorMessage('Diese Wahl ist nicht aktiv.')
+          setErrorMessage('Diese Veranstaltung ist nicht aktiv.')
         }
         setStep('error')
         setLoading(false)
         return
       }
 
-      const electionObj: Election = {
-        id: electionSnap.id,
-        associationId: electionData.associationId,
-        title: electionData.title,
-        description: electionData.description,
-        electionDate: electionData.electionDate?.toDate() || new Date(),
-        maxVoters: electionData.maxVoters,
-        invitationText: electionData.invitationText,
-        showLinkWithCode: electionData.showLinkWithCode || false,
-        status: electionData.status,
-        codesGenerated: electionData.codesGenerated,
-        createdAt: electionData.createdAt?.toDate() || new Date(),
-        updatedAt: electionData.updatedAt?.toDate() || new Date()
+      const eventObj: Event = {
+        id: eventSnap.id,
+        associationId: eventData.associationId,
+        title: eventData.title,
+        description: eventData.description,
+        startDate: eventData.startDate?.toDate() || new Date(),
+        endDate: eventData.endDate?.toDate(),
+        startTime: eventData.startTime,
+        endTime: eventData.endTime,
+        maxVoters: eventData.maxVoters,
+        invitationText: eventData.invitationText,
+        showLinkWithCode: eventData.showLinkWithCode || false,
+        status: eventData.status,
+        createdAt: eventData.createdAt?.toDate() || new Date(),
+        updatedAt: eventData.updatedAt?.toDate() || new Date()
       }
 
-      const questionsRef = collection(db, 'electionQuestions')
-      const questionsQuery = query(questionsRef, where('electionId', '==', codeData.electionId))
+      const questionsRef = collection(db, 'eventQuestions')
+      const questionsQuery = query(questionsRef, where('eventId', '==', codeData.eventId))
       const questionsSnap = await getDocs(questionsQuery)
       
-      const loadedQuestions: ElectionQuestion[] = []
+      const loadedQuestions: EventQuestion[] = []
       questionsSnap.forEach((qDoc) => {
         const qData = qDoc.data()
         loadedQuestions.push({
           id: qDoc.id,
-          electionId: qData.electionId,
+          eventId: qData.eventId,
           question: qData.question,
           options: qData.options,
           allowInvalidVotes: qData.allowInvalidVotes,
@@ -139,7 +141,7 @@ function VotingContent() {
       loadedQuestions.sort((a, b) => a.order - b.order)
 
       setVoterCode(voterCodeData)
-      setElection(electionObj)
+      setEvent(eventObj)
       setQuestions(loadedQuestions)
       setStep('voting')
     } catch (error) {
@@ -152,7 +154,7 @@ function VotingContent() {
   }
 
   const handleSubmitVote = async (questionId: string, allowInvalidVotes: boolean) => {
-    if (!voterCode || !election) return
+    if (!voterCode || !event) return
 
     const selectedOption = selectedOptions[questionId]
 
@@ -175,14 +177,14 @@ function VotingContent() {
   }
 
   const submitVote = async (questionId: string, isInvalid: boolean) => {
-    if (!voterCode || !election) return
+    if (!voterCode || !event) return
     setLoading(true)
 
     try {
       const selectedOption = selectedOptions[questionId]
       
       await addDoc(collection(db, 'votes'), {
-        electionId: election.id,
+        eventId: event.id,
         questionId: questionId,
         optionId: isInvalid ? null : selectedOption,
         isInvalid: isInvalid,
@@ -283,13 +285,13 @@ function VotingContent() {
           </Card>
         )}
 
-        {step === 'voting' && election && (
+        {step === 'voting' && event && (
           <div className="w-full max-w-2xl animate-fade-in space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle className="text-xl">{election.title}</CardTitle>
-                {election.description && (
-                  <CardDescription>{election.description}</CardDescription>
+                <CardTitle className="text-xl">{event.title}</CardTitle>
+                {event.description && (
+                  <CardDescription>{event.description}</CardDescription>
                 )}
               </CardHeader>
               <CardContent>
