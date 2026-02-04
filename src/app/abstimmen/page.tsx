@@ -26,6 +26,7 @@ function VotingContent() {
   const [questions, setQuestions] = useState<ElectionQuestion[]>([])
   const [selectedOptions, setSelectedOptions] = useState<Record<string, string | null>>({})
   const [showInvalidWarning, setShowInvalidWarning] = useState(false)
+  const [pendingInvalidQuestionId, setPendingInvalidQuestionId] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState('')
   const [votedQuestions, setVotedQuestions] = useState<string[]>([])
 
@@ -64,13 +65,6 @@ function VotingContent() {
 
       const codeDoc = querySnapshot.docs[0]
       const codeData = codeDoc.data()
-
-      if (codeData.hasVoted) {
-        setErrorMessage('Mit diesem Code wurde bereits abgestimmt. Jeder Code kann nur einmal verwendet werden.')
-        setStep('error')
-        setLoading(false)
-        return
-      }
 
       const voterCodeData: VoterCode = {
         id: codeDoc.id,
@@ -172,6 +166,7 @@ function VotingContent() {
     }
 
     if (!selectedOption && allowInvalidVotes) {
+      setPendingInvalidQuestionId(questionId)
       setShowInvalidWarning(true)
       return
     }
@@ -223,6 +218,7 @@ function VotingContent() {
     } finally {
       setLoading(false)
       setShowInvalidWarning(false)
+      setPendingInvalidQuestionId(null)
     }
   }
 
@@ -457,7 +453,13 @@ function VotingContent() {
           </Card>
         )}
 
-        <AlertDialog open={showInvalidWarning} onOpenChange={setShowInvalidWarning}>
+        <AlertDialog
+          open={showInvalidWarning}
+          onOpenChange={(open) => {
+            setShowInvalidWarning(open)
+            if (!open) setPendingInvalidQuestionId(null)
+          }}
+        >
           <AlertDialogContent>
             <AlertDialogHeader>
               <div className="mx-auto w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mb-4">
@@ -474,7 +476,10 @@ function VotingContent() {
                 Zurück zur Auswahl
               </AlertDialogCancel>
               <AlertDialogAction 
-                onClick={() => submitVote(true)}
+                onClick={() => {
+                  if (!pendingInvalidQuestionId) return
+                  submitVote(pendingInvalidQuestionId, true)
+                }}
                 className="w-full sm:w-auto"
               >
                 Ungültig abstimmen
