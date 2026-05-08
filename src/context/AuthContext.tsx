@@ -1,9 +1,25 @@
 "use client"
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
-import { db } from '@/lib/firebase'
-import { collection, query, where, getDocs, addDoc, doc, updateDoc, Timestamp } from 'firebase/firestore'
-import bcrypt from 'bcryptjs'
+import { db, auth } from '@/lib/firebase'
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  getDoc,
+  setDoc,
+  Timestamp
+} from 'firebase/firestore'
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  signOut,
+  type User
+} from 'firebase/auth'
 import type { Association } from '@/types'
 
 interface RegisterInput {
@@ -22,9 +38,9 @@ interface AuthContextType {
   association: Association | null
   isAuthenticated: boolean
   isLoading: boolean
-  login: (identifier: string, password: string) => Promise<boolean>
+  login: (email: string, password: string) => Promise<boolean>
   register: (input: RegisterInput) => Promise<RegisterResult>
-  logout: () => void
+  logout: () => Promise<void>
 }
 
 function generateVereinsNummer(): string {
@@ -34,111 +50,99 @@ function generateVereinsNummer(): string {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+async function loadAssociationForUser(user: User): Promise<Association | null> {
+  const ref = doc(db, 'associations', user.uid)
+  const snap = await getDoc(ref)
+  if (!snap.exists()) return null
+  const data = snap.data()
+  return {
+    id: snap.id,
+    vereinsNummer: data.vereinsNummer,
+    name: data.name || user.displayName || '',
+    address: data.address,
+    email: data.email || user.email || undefined,
+    phone: data.phone,
+    createdAt: data.createdAt?.toDate() || new Date(),
+    updatedAt: data.updatedAt?.toDate() || new Date()
+  }
+}
+
+function mapAuthError(code: string | undefined): string {
+  switch (code) {
+    case 'auth/invalid-credential':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+      return 'E-Mail oder Passwort ist falsch.'
+    case 'auth/email-already-in-use':
+      return 'Diese E-Mail ist bereits registriert.'
+    case 'auth/invalid-email':
+      return 'Ungültige E-Mail-Adresse.'
+    case 'auth/weak-password':
+      return 'Das Passwort ist zu schwach (mind. 6 Zeichen).'
+    case 'auth/too-many-requests':
+      return 'Zu viele Versuche. Bitte später erneut versuchen.'
+    case 'auth/network-request-failed':
+      return 'Netzwerkfehler. Bitte Internetverbindung prüfen.'
+    default:
+      return 'Anmeldung fehlgeschlagen. Bitte erneut versuchen.'
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [association, setAssociation] = useState<Association | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const stored = localStorage.getItem('vereins-wahlen-auth')
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored)
-        setAssociation(parsed)
-      } catch {
-        localStorage.removeItem('vereins-wahlen-auth')
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        try {
+          const assoc = await loadAssociationForUser(user)
+          setAssociation(assoc)
+        } catch (err) {
+          console.error('Failed to load association:', err)
+          setAssociation(null)
+        }
+      } else {
+        setAssociation(null)
       }
-    }
-    setIsLoading(false)
+      setIsLoading(false)
+    })
+    return () => unsubscribe()
   }, [])
 
-  const login = async (identifier: string, password: string): Promise<boolean> => {
+  const login = async (email: string, password: string): Promise<boolean> => {
     try {
-      const associationsRef = collection(db, 'associations')
-      const trimmed = identifier.trim()
-      const isEmail = trimmed.includes('@')
-      const field = isEmail ? 'email' : 'vereinsNummer'
-      const value = isEmail ? trimmed.toLowerCase() : trimmed
-
-      const q = query(associationsRef, where(field, '==', value))
-      const querySnapshot = await getDocs(q)
-
-      if (querySnapshot.empty) {
-        return false
-      }
-
-      const docSnap = querySnapshot.docs[0]
-      const data = docSnap.data()
-
-      let passwordOk = false
-      let needsUpgrade = false
-
-      if (data.passwordHash && typeof data.passwordHash === 'string') {
-        passwordOk = await bcrypt.compare(password, data.passwordHash)
-      } else if (data.password && typeof data.password === 'string') {
-        // Legacy plaintext fallback; upgrade to hash on successful login
-        passwordOk = data.password === password
-        needsUpgrade = passwordOk
-      }
-
-      if (!passwordOk) {
-        return false
-      }
-
-      if (needsUpgrade) {
-        try {
-          const newHash = await bcrypt.hash(password, 10)
-          await updateDoc(doc(db, 'associations', docSnap.id), {
-            passwordHash: newHash,
-            password: null,
-            updatedAt: Timestamp.now()
-          })
-        } catch (upgradeError) {
-          console.warn('Password hash upgrade failed:', upgradeError)
-        }
-      }
-
-      const assoc: Association = {
-        id: docSnap.id,
-        vereinsNummer: data.vereinsNummer,
-        name: data.name || '',
-        address: data.address,
-        email: data.email,
-        phone: data.phone,
-        createdAt: data.createdAt?.toDate() || new Date(),
-        updatedAt: data.updatedAt?.toDate() || new Date()
-      }
-
+      const cred = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password)
+      const assoc = await loadAssociationForUser(cred.user)
       setAssociation(assoc)
-      localStorage.setItem('vereins-wahlen-auth', JSON.stringify(assoc))
-      return true
-    } catch (error) {
-      console.error('Login error:', error)
+      return !!assoc
+    } catch (error: any) {
+      console.error('Login error:', error?.code || error)
       return false
     }
   }
 
   const register = async ({ name, email, password }: RegisterInput): Promise<RegisterResult> => {
+    const cleanEmail = email.trim().toLowerCase()
+    const cleanName = name.trim()
+
+    if (!cleanName || !cleanEmail || !password) {
+      return { success: false, error: 'Bitte alle Felder ausfüllen.' }
+    }
+    if (password.length < 8) {
+      return { success: false, error: 'Das Passwort muss mindestens 8 Zeichen lang sein.' }
+    }
+
     try {
-      const cleanEmail = email.trim().toLowerCase()
-      const cleanName = name.trim()
-
-      if (!cleanName || !cleanEmail || !password) {
-        return { success: false, error: 'Bitte alle Felder ausfüllen.' }
-      }
-      if (password.length < 8) {
-        return { success: false, error: 'Das Passwort muss mindestens 8 Zeichen lang sein.' }
-      }
-
-      const associationsRef = collection(db, 'associations')
-
-      // Check duplicate email
-      const emailQuery = query(associationsRef, where('email', '==', cleanEmail))
-      const emailSnap = await getDocs(emailQuery)
-      if (!emailSnap.empty) {
-        return { success: false, error: 'Diese E-Mail ist bereits registriert.' }
+      const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password)
+      try {
+        await updateProfile(cred.user, { displayName: cleanName })
+      } catch {
+        /* non-fatal */
       }
 
       // Generate unique vereinsNummer
+      const associationsRef = collection(db, 'associations')
       let vereinsNummer = generateVereinsNummer()
       for (let i = 0; i < 5; i++) {
         const vnQuery = query(associationsRef, where('vereinsNummer', '==', vereinsNummer))
@@ -147,39 +151,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         vereinsNummer = generateVereinsNummer()
       }
 
-      const passwordHash = await bcrypt.hash(password, 10)
-
       const now = Timestamp.now()
-      const newDoc = await addDoc(associationsRef, {
+      await setDoc(doc(db, 'associations', cred.user.uid), {
         name: cleanName,
         email: cleanEmail,
         vereinsNummer,
-        passwordHash,
+        ownerUid: cred.user.uid,
         createdAt: now,
         updatedAt: now
       })
 
       const assoc: Association = {
-        id: newDoc.id,
+        id: cred.user.uid,
         vereinsNummer,
         name: cleanName,
         email: cleanEmail,
         createdAt: now.toDate(),
         updatedAt: now.toDate()
       }
-
       setAssociation(assoc)
-      localStorage.setItem('vereins-wahlen-auth', JSON.stringify(assoc))
       return { success: true, vereinsNummer }
-    } catch (error) {
-      console.error('Register error:', error)
-      return { success: false, error: 'Registrierung fehlgeschlagen. Bitte versuchen Sie es erneut.' }
+    } catch (error: any) {
+      console.error('Register error:', error?.code || error)
+      return { success: false, error: mapAuthError(error?.code) }
     }
   }
 
-  const logout = () => {
+  const logout = async () => {
+    await signOut(auth)
     setAssociation(null)
-    localStorage.removeItem('vereins-wahlen-auth')
+    try {
+      localStorage.removeItem('vereins-wahlen-auth')
+    } catch {
+      /* ignore */
+    }
   }
 
   return (

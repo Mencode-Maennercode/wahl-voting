@@ -11,7 +11,7 @@ import { useToast } from '@/components/ui/use-toast'
 import { Vote, Shield, Users, Lock, QrCode, FileText } from 'lucide-react'
 
 export default function HomePage() {
-  const [vereinsNummer, setVereinsNummer] = useState('')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [showLogin, setShowLogin] = useState(false)
@@ -23,7 +23,7 @@ export default function HomePage() {
     e.preventDefault()
     setIsLoading(true)
 
-    const success = await login(vereinsNummer, password)
+    const success = await login(email, password)
 
     if (success) {
       toast({
@@ -34,7 +34,7 @@ export default function HomePage() {
     } else {
       toast({
         title: "Anmeldung fehlgeschlagen",
-        description: "Vereinsnummer oder Passwort ist falsch.",
+        description: "E-Mail oder Passwort ist falsch.",
         variant: "destructive",
       })
     }
@@ -72,19 +72,19 @@ export default function HomePage() {
               <CardHeader className="text-center">
                 <CardTitle className="text-2xl">Vereins-Anmeldung</CardTitle>
                 <CardDescription>
-                  Melden Sie sich mit Ihrer Vereinsnummer und Ihrem Passwort an.
+                  Melden Sie sich mit Ihrer E-Mail und Ihrem Passwort an.
                 </CardDescription>
               </CardHeader>
               <CardContent>
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="vereinsNummer">Vereinsnummer oder E-Mail</Label>
+                    <Label htmlFor="email">E-Mail</Label>
                     <Input
-                      id="vereinsNummer"
-                      type="text"
-                      placeholder="VN-12345 oder vorstand@verein.de"
-                      value={vereinsNummer}
-                      onChange={(e) => setVereinsNummer(e.target.value)}
+                      id="email"
+                      type="email"
+                      placeholder="vorstand@verein.de"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
                       required
                     />
                   </div>
