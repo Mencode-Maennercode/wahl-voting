@@ -3,10 +3,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react'
 import { db, auth } from '@/lib/firebase'
 import {
-  collection,
-  query,
-  where,
-  getDocs,
   doc,
   getDoc,
   setDoc,
@@ -44,7 +40,7 @@ interface AuthContextType {
 }
 
 function generateVereinsNummer(): string {
-  const digits = Math.floor(10000 + Math.random() * 90000)
+  const digits = Math.floor(100000 + Math.random() * 900000)
   return `VN-${digits}`
 }
 
@@ -133,23 +129,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: false, error: 'Das Passwort muss mindestens 8 Zeichen lang sein.' }
     }
 
+    let createdUser: import('firebase/auth').User | null = null
     try {
       const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password)
+      createdUser = cred.user
       try {
         await updateProfile(cred.user, { displayName: cleanName })
       } catch {
         /* non-fatal */
       }
 
-      // Generate unique vereinsNummer
-      const associationsRef = collection(db, 'associations')
-      let vereinsNummer = generateVereinsNummer()
-      for (let i = 0; i < 5; i++) {
-        const vnQuery = query(associationsRef, where('vereinsNummer', '==', vereinsNummer))
-        const vnSnap = await getDocs(vnQuery)
-        if (vnSnap.empty) break
-        vereinsNummer = generateVereinsNummer()
-      }
+      // Random 6-stellige Vereinsnummer (Kollisionsrisiko vernachlässigbar).
+      // Eindeutigkeitsprüfung per Query würde Rules verletzen (Listing fremder Docs).
+      const vereinsNummer = generateVereinsNummer()
 
       const now = Timestamp.now()
       await setDoc(doc(db, 'associations', cred.user.uid), {
@@ -173,6 +165,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { success: true, vereinsNummer }
     } catch (error: any) {
       console.error('Register error:', error?.code || error)
+      // Auth-User wurde erstellt, aber Firestore-Schreiben schlug fehl -> Auth-User wieder löschen,
+      // damit der Nutzer es mit derselben E-Mail erneut versuchen kann.
+      if (createdUser) {
+        try {
+          await createdUser.delete()
+        } catch (cleanupError) {
+          console.warn('Cleanup of orphan auth user failed:', cleanupError)
+        }
+      }
       return { success: false, error: mapAuthError(error?.code) }
     }
   }
