@@ -78,11 +78,11 @@ export default function HomePage() {
               <CardContent>
                 <form onSubmit={handleLogin} className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="vereinsNummer">Vereinsnummer</Label>
+                    <Label htmlFor="vereinsNummer">Vereinsnummer oder E-Mail</Label>
                     <Input
                       id="vereinsNummer"
                       type="text"
-                      placeholder="z.B. VN-12345"
+                      placeholder="VN-12345 oder vorstand@verein.de"
                       value={vereinsNummer}
                       onChange={(e) => setVereinsNummer(e.target.value)}
                       required
@@ -101,6 +101,14 @@ export default function HomePage() {
                   </div>
                   <Button type="submit" className="w-full" disabled={isLoading}>
                     {isLoading ? 'Anmelden...' : 'Anmelden'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => router.push('/register')}
+                  >
+                    Neu hier? Verein registrieren
                   </Button>
                   <Button
                     type="button"
@@ -125,8 +133,11 @@ export default function HomePage() {
                 anonym, sicher und DSGVO-konform nach deutschem Vereinsrecht.
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <Button size="lg" onClick={() => setShowLogin(true)}>
-                  Jetzt starten
+                <Button size="lg" onClick={() => router.push('/register')}>
+                  Verein registrieren
+                </Button>
+                <Button size="lg" variant="outline" onClick={() => setShowLogin(true)}>
+                  Anmelden
                 </Button>
                 <Button size="lg" variant="outline" onClick={handleVoterAccess}>
                   <QrCode className="mr-2 h-5 w-5" />
@@ -221,7 +232,7 @@ export default function HomePage() {
                 <Button 
                   variant="secondary" 
                   size="lg"
-                  onClick={() => setShowLogin(true)}
+                  onClick={() => router.push('/register')}
                 >
                   Verein registrieren
                 </Button>
