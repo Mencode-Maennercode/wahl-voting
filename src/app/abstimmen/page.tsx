@@ -222,6 +222,7 @@ function VotingContent() {
       
       await addDoc(collection(db, 'votes'), {
         eventId: event.id,
+        associationId: event.associationId,
         questionId: questionId,
         optionId: isInvalid ? null : selectedOption,
         isInvalid: isInvalid,

@@ -99,6 +99,7 @@ export default function EventCodesPage({ params }: { params: { id: string } }) {
         const code = generateUniqueCode()
         const voterCode = {
           eventId: event.id,
+          associationId: event.associationId,
           code,
           votedQuestions: [],
           createdAt: Timestamp.now()
